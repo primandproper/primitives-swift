@@ -10,6 +10,8 @@ let package = Package(
   products: [
     .library(name: "Observability", targets: ["Observability"]),
     .library(name: "ObservabilityOTel", targets: ["ObservabilityOTel"]),
+    .library(name: "Filtering", targets: ["Filtering"]),
+    .library(name: "APIErrors", targets: ["APIErrors"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
@@ -32,6 +34,25 @@ let package = Package(
     .testTarget(
       name: "ObservabilityTests",
       dependencies: ["Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Filtering",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "APIErrors",
+      dependencies: ["Filtering"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "FilteringTests",
+      dependencies: ["Filtering"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "APIErrorsTests",
+      dependencies: ["APIErrors", "Filtering"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
   ]
