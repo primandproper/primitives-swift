@@ -52,5 +52,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release edit "${{ github.event.release.tag_name }}" --draft \
+          gh release edit "${{ github.event.release.tag_name }}" \
+            --repo "${{ github.repository }}" --draft \
             --notes "⚠️ Automated validation failed for this tag — retracted to draft. See the failed 'release' run. The git tag still exists and remains SPM-resolvable; delete it (git push --delete origin <tag>) and cut a patch."
