@@ -37,13 +37,17 @@ private func liveSSEStream(_ text: String, _ ending: Ending) async -> SSEEventSt
 
 @Suite("ReconnectingSSEEventStream")
 struct ReconnectingSSEEventStreamTests {
-  @Test("a mid-stream transport blip reconnects instead of killing the stream", .timeLimit(.minutes(1)))
+  @Test(
+    "a mid-stream transport blip reconnects instead of killing the stream", .timeLimit(.minutes(1)))
   func reconnectsAfterTransportBlip() async throws {
     let connectCount = OSAllocatedUnfairLock(initialState: 0)
     let capturedHeaders = OSAllocatedUnfairLock<[String: String]>(initialState: [:])
 
     let connect: @Sendable ([String: String]) async throws -> SSEEventStream = { headers in
-      let attempt = connectCount.withLock { $0 += 1; return $0 }
+      let attempt = connectCount.withLock {
+        $0 += 1
+        return $0
+      }
       capturedHeaders.withLock { $0 = headers }
       if attempt == 1 {
         // First connection: yield event A carrying id 42, then a transport error.

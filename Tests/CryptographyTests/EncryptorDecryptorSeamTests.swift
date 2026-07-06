@@ -28,7 +28,9 @@ struct EncryptorDecryptorSeamTests {
   func mockHandlers() throws {
     let mock = MockEncryptorDecryptor(
       encryptHandler: { "enc(\($0))" },
-      decryptHandler: { $0.replacingOccurrences(of: "enc(", with: "").replacingOccurrences(of: ")", with: "") })
+      decryptHandler: {
+        $0.replacingOccurrences(of: "enc(", with: "").replacingOccurrences(of: ")", with: "")
+      })
     #expect(try mock.encrypt("x") == "enc(x)")
     #expect(try mock.decrypt("enc(x)") == "x")
   }

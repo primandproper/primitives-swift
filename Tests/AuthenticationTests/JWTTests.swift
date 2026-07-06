@@ -63,7 +63,8 @@ struct JWTHS256Tests {
 
   @Test("rejects a mismatched issuer")
   func wrongIssuer() {
-    let p = JWTParser(key: .hs256(secret: key), expectedIssuer: "someone-else", expectedAudience: audience)
+    let p = JWTParser(
+      key: .hs256(secret: key), expectedIssuer: "someone-else", expectedAudience: audience)
     #expect(throws: JWTError.invalidIssuer) {
       _ = try p.parse(goToken, at: validInstant)
     }
@@ -71,7 +72,8 @@ struct JWTHS256Tests {
 
   @Test("rejects a mismatched audience")
   func wrongAudience() {
-    let p = JWTParser(key: .hs256(secret: key), expectedIssuer: issuer, expectedAudience: "other-service")
+    let p = JWTParser(
+      key: .hs256(secret: key), expectedIssuer: issuer, expectedAudience: "other-service")
     #expect(throws: JWTError.invalidAudience) {
       _ = try p.parse(goToken, at: validInstant)
     }
@@ -200,10 +202,11 @@ struct JWTAsymmetricTests {
 
     let input = makeUnsignedInput(
       header: ["alg": "RS256", "typ": "JWT"], claims: ["sub": "u", "exp": 2_000_000])
-    let signature = try #require(
-      SecKeyCreateSignature(
-        privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(input.utf8) as CFData, &error)
-    ) as Data
+    let signature =
+      try #require(
+        SecKeyCreateSignature(
+          privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(input.utf8) as CFData, &error)
+      ) as Data
     let token = input + "." + Base64URLNoPad.encode(signature)
 
     let parser = JWTParser(key: .rsa(publicKey))

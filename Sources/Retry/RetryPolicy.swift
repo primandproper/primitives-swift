@@ -43,5 +43,6 @@ public struct UnretryableError: Error {
 /// `CancellationError` (see `HTTPClient`, which deliberately leaves it unwrapped for this check), so that
 /// too is terminal. None can be resolved by waiting and trying again, so the loop returns immediately.
 func isTerminal(_ error: any Error) -> Bool {
-  error is CancellationError || error is UnretryableError || (error as? URLError)?.code == .cancelled
+  error is CancellationError || error is UnretryableError
+    || (error as? URLError)?.code == .cancelled
 }

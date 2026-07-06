@@ -105,7 +105,8 @@ public struct TOTPQRCodeBuilder: QRCodeBuilder {
     // Upscale to ~pixelSize with nearest-neighbor sampling so modules stay hard-edged rather than
     // blurred by the default bilinear interpolation.
     let scale = CGFloat(pixelSize) / extent.width
-    let scaledImage = baseImage
+    let scaledImage =
+      baseImage
       .samplingNearest()
       .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
 

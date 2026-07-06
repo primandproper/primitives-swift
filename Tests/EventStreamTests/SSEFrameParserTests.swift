@@ -71,9 +71,10 @@ struct SSEFrameParserTests {
     }
 
     #expect(dispatched.map(\.type) == ["msg", "msg", "msg"])
-    #expect(dispatched.map { String(decoding: $0.payload ?? Data(), as: UTF8.self) } == [
-      "\"first\"", "\"second\"", "\"third\"",
-    ])
+    #expect(
+      dispatched.map { String(decoding: $0.payload ?? Data(), as: UTF8.self) } == [
+        "\"first\"", "\"second\"", "\"third\"",
+      ])
   }
 
   @Test("a comment line is ignored")

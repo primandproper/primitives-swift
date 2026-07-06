@@ -48,11 +48,14 @@ extension BidirectionalEventStreamConnector {
 public struct AnyEventStreamConnector: EventStreamConnector {
   private let connectClosure: @Sendable (URL, [String: String]) async throws -> any EventStream
 
-  public init(_ connect: @escaping @Sendable (URL, [String: String]) async throws -> any EventStream) {
+  public init(
+    _ connect: @escaping @Sendable (URL, [String: String]) async throws -> any EventStream
+  ) {
     self.connectClosure = connect
   }
 
-  public func connect(to url: URL, headers: [String: String] = [:]) async throws -> any EventStream {
+  public func connect(to url: URL, headers: [String: String] = [:]) async throws -> any EventStream
+  {
     try await connectClosure(url, headers)
   }
 }

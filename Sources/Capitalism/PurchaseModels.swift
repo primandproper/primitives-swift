@@ -125,7 +125,7 @@ extension PurchaseResult: Equatable {
   /// a result's identity (and closures aren't `Equatable`).
   public static func == (lhs: PurchaseResult, rhs: PurchaseResult) -> Bool {
     switch (lhs, rhs) {
-    case let (.success(l, _), .success(r, _)): return l == r
+    case (.success(let l, _), .success(let r, _)): return l == r
     case (.pending, .pending), (.userCancelled, .userCancelled): return true
     default: return false
     }

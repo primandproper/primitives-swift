@@ -303,7 +303,9 @@ struct WebSocketEventStreamConnectorTests {
 /// in a plain `withCheckedContinuation` with no cancellation handler — it can never observe the teardown
 /// NET-04 guarantees. This test-local double adds exactly that observability without touching the Sources
 /// type. `sendPing()` succeeds so the handshake path (if used) doesn't fail; `send()`/`resume()` are inert.
-private final class CancellationRecordingWebSocketConnection: WebSocketConnection, @unchecked Sendable {
+private final class CancellationRecordingWebSocketConnection: WebSocketConnection,
+  @unchecked Sendable
+{
   private struct State {
     var receiveWaiter: CheckedContinuation<URLSessionWebSocketTask.Message, any Error>?
     var receiveCancelled = false

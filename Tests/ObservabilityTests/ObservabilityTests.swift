@@ -1,6 +1,7 @@
 import Foundation
 import Metrics
 import Testing
+
 import struct os.OSAllocatedUnfairLock
 
 @testable import Observability
@@ -173,7 +174,8 @@ struct SpanSeamTests {
   func startSpanWithKindAndAttributes() {
     let span =
       SignpostTracer()
-      .startSpan("op", kind: .server, attributes: ["http.method": .string("GET"), "count": .int(3)])
+      .startSpan(
+        "op", kind: .server, attributes: ["http.method": .string("GET"), "count": .int(3)])
       as! SignpostSpan
     #expect(span.name == "op")
     #expect(span.kind == .server)
@@ -199,7 +201,8 @@ struct SpanSeamTests {
     #expect(named.category == "spans.ProfileService")
 
     // A LiveObserver wires the component name into its tracer via `named`.
-    let observer = makeObserver("Checkout", ObservabilityConfig.default.bootstrap()) as! LiveObserver
+    let observer =
+      makeObserver("Checkout", ObservabilityConfig.default.bootstrap()) as! LiveObserver
     #expect((observer.tracer as! SignpostTracer).category == "spans.Checkout")
 
     // The noop tracer ignores naming (default seam), returning an equivalent tracer.
@@ -249,12 +252,15 @@ final class RecordingLogger: Logger, @unchecked Sendable {
   private var _messages: [String] = []
 
   var messages: [String] {
-    lock.lock(); defer { lock.unlock() }
+    lock.lock()
+    defer { lock.unlock() }
     return _messages
   }
 
   func info(_ message: String) {
-    lock.lock(); _messages.append(message); lock.unlock()
+    lock.lock()
+    _messages.append(message)
+    lock.unlock()
   }
   func debug(_ message: String) {}
   func error(_ whatWasHappening: String, _ error: Error) {}
@@ -284,7 +290,9 @@ struct DiagnosticsTests {
 
     let first = DiagnosticPayload(crashes: [CrashDiagnostic(signal: 11)])
     let second = DiagnosticPayload(hangs: [HangDiagnostic(durationSeconds: 2.5)])
-    dispatcher.dispatch([FakeDiagnosticPayload(payload: first), FakeDiagnosticPayload(payload: second)])
+    dispatcher.dispatch([
+      FakeDiagnosticPayload(payload: first), FakeDiagnosticPayload(payload: second),
+    ])
 
     #expect(received.values == [first, second])
   }
@@ -338,11 +346,14 @@ final class ReceivedBox: @unchecked Sendable {
   private let lock = NSLock()
   private var _values: [DiagnosticPayload] = []
   var values: [DiagnosticPayload] {
-    lock.lock(); defer { lock.unlock() }
+    lock.lock()
+    defer { lock.unlock() }
     return _values
   }
   func append(_ p: DiagnosticPayload) {
-    lock.lock(); _values.append(p); lock.unlock()
+    lock.lock()
+    _values.append(p)
+    lock.unlock()
   }
 }
 
@@ -415,7 +426,8 @@ private final class SpyMetricsFactory: MetricsFactory, @unchecked Sendable {
   func makeCounter(label: String, dimensions: [(String, String)]) -> CounterHandler {
     SpyCounterHandler { [count] in count.withLock { $0 += 1 } }
   }
-  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool) -> RecorderHandler
+  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool)
+    -> RecorderHandler
   {
     NOOPMetricsHandler.instance
   }

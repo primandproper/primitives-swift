@@ -87,14 +87,16 @@ struct SourceConfigProvideCollectorTests {
   @Test("a segment provider with an empty api token throws (mirrors Go's ErrEmptyAPIToken)")
   func segmentEmptyKeyThrows() {
     #expect(throws: SegmentEventReporterError.emptyWriteKey) {
-      _ = try SourceConfig(segment: SegmentConfig(apiToken: ""), provider: "segment").provideCollector()
+      _ = try SourceConfig(segment: SegmentConfig(apiToken: ""), provider: "segment")
+        .provideCollector()
     }
   }
 
   @Test("a posthog provider with an empty api key throws (mirrors Go's ErrEmptyAPIToken)")
   func postHogEmptyKeyThrows() {
     #expect(throws: PostHogEventReporterError.emptyAPIKey) {
-      _ = try SourceConfig(posthog: PostHogConfig(apiKey: ""), provider: "posthog").provideCollector()
+      _ = try SourceConfig(posthog: PostHogConfig(apiKey: ""), provider: "posthog")
+        .provideCollector()
     }
   }
 
@@ -176,7 +178,8 @@ struct SourceConfigDefaultsTests {
   func roundTrip() throws {
     let original = SourceConfig(
       segment: SegmentConfig(apiToken: "tok"), provider: "segment",
-      circuitBreaker: CircuitBreakerConfig(name: "analytics", errorRate: 50, minimumSampleThreshold: 10))
+      circuitBreaker: CircuitBreakerConfig(
+        name: "analytics", errorRate: 50, minimumSampleThreshold: 10))
     let decoded = try JSONDecoder().decode(
       SourceConfig.self, from: try JSONEncoder().encode(original))
     #expect(decoded == original)

@@ -7,8 +7,12 @@ import Testing
 struct LLMErrorTests {
   @Test("401 and 403 map to authentication")
   func auth() {
-    #expect(LLMError.classify(status: 401, message: "", model: "m", retryAfterHeader: nil) == .authentication)
-    #expect(LLMError.classify(status: 403, message: "", model: "m", retryAfterHeader: nil) == .authentication)
+    #expect(
+      LLMError.classify(status: 401, message: "", model: "m", retryAfterHeader: nil)
+        == .authentication)
+    #expect(
+      LLMError.classify(status: 403, message: "", model: "m", retryAfterHeader: nil)
+        == .authentication)
   }
 
   @Test("404 maps to modelNotFound carrying the model")

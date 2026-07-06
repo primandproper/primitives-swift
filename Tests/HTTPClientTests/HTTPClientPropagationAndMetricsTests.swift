@@ -158,7 +158,8 @@ struct HTTPClientFailureMetricsTests {
     #expect(events.first?.tags["method"] == "GET")
   }
 
-  @Test("a cancellation is tagged outcome=cancelled, not error, so it doesn't inflate the error rate")
+  @Test(
+    "a cancellation is tagged outcome=cancelled, not error, so it doesn't inflate the error rate")
   func cancellationIsTaggedDistinctly() async throws {
     let token = UUID().uuidString
     StubURLProtocol.register(token) { _ in .blockUntilCancelled }

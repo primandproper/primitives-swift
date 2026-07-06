@@ -23,6 +23,7 @@ public struct StoreKitConfig: Codable, Sendable, Equatable {
   /// unmarshals into a Go struct's zero value.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    productIdentifiers = try container.decodeIfPresent([String].self, forKey: .productIdentifiers) ?? []
+    productIdentifiers =
+      try container.decodeIfPresent([String].self, forKey: .productIdentifiers) ?? []
   }
 }

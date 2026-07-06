@@ -167,7 +167,12 @@ struct HTTPClientCircuitBreakerTests {
   /// retry loop.
   final class TripAfterFirstFailureBreaker: CircuitBreaker, @unchecked Sendable {
     private let state = OSAllocatedUnfairLock(initialState: (open: false, failed: 0))
-    func recordFailure() { state.withLock { $0.failed += 1; $0.open = true } }
+    func recordFailure() {
+      state.withLock {
+        $0.failed += 1
+        $0.open = true
+      }
+    }
     func recordSuccess() {}
     func canProceed() -> Bool { state.withLock { !$0.open } }
     var failures: Int { state.withLock { $0.failed } }
@@ -176,7 +181,8 @@ struct HTTPClientCircuitBreakerTests {
   // NET-10: the breaker gate moved from a once-per-`perform` check to a per-attempt check inside the
   // retried closure. A breaker that trips on the first attempt's failure must fail the remaining retry
   // attempts fast — at the gate, without hitting the transport again.
-  @Test("the breaker gate is re-checked per retry attempt, short-circuiting once it trips mid-retry")
+  @Test(
+    "the breaker gate is re-checked per retry attempt, short-circuiting once it trips mid-retry")
   func gateRecheckedPerRetryAttempt() async throws {
     let token = UUID().uuidString
     let attempts = AttemptCounter()
@@ -280,7 +286,8 @@ struct HTTPClientCircuitBreakerTests {
     }
   }
 
-  @Test("the default classifier records success for a 500 (only the gateway trio counts as failure)")
+  @Test(
+    "the default classifier records success for a 500 (only the gateway trio counts as failure)")
   func closedBreakerRecordsSuccessOnPlain500() async throws {
     let token = UUID().uuidString
     StubURLProtocol.register(token) { _ in .respond(status: 500, body: Data(), headers: [:]) }

@@ -170,7 +170,8 @@ public struct TOTP: Sendable {
     let symmetricKey = SymmetricKey(data: key)
     switch algorithm {
     case .sha1:
-      return Array(CryptoKit.HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey))
+      return Array(
+        CryptoKit.HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey))
     case .sha256:
       return Array(CryptoKit.HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey))
     case .sha512:

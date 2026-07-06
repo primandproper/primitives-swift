@@ -148,7 +148,8 @@ struct KeyedCircuitBreakerConfigTests {
     #expect(json["base"] != nil)
   }
 
-  @Test("provides a partitioned breaker: registered keys get dedicated breakers, others share global")
+  @Test(
+    "provides a partitioned breaker: registered keys get dedicated breakers, others share global")
   func providesPartitioned() {
     let cfg = KeyedCircuitBreakerConfig(keys: ["123"], base: .init(name: "kb"))
     let keyed = cfg.provideKeyedCircuitBreaker()

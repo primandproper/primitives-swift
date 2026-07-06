@@ -22,7 +22,8 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
   private static let registry =
     OSAllocatedUnfairLock<[String: @Sendable (URLRequest) -> StubOutcome]>(initialState: [:])
 
-  static func register(_ token: String, _ handler: @escaping @Sendable (URLRequest) -> StubOutcome) {
+  static func register(_ token: String, _ handler: @escaping @Sendable (URLRequest) -> StubOutcome)
+  {
     registry.withLock { $0[token] = handler }
   }
 
@@ -51,13 +52,13 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     switch handler(request) {
-    case let .respond(status, body, headers):
+    case .respond(let status, let body, let headers):
       let response = HTTPURLResponse(
         url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: body)
       client?.urlProtocolDidFinishLoading(self)
-    case let .fail(error):
+    case .fail(let error):
       client?.urlProtocol(self, didFailWithError: error)
     case .blockUntilCancelled:
       // Do NOT block the loader thread — a busy-wait here starves CFNetwork's URLProtocol worker
@@ -87,7 +88,9 @@ func stubbedSession() -> URLSession {
 }
 
 /// A request carrying the stub token header so the protocol can find its handler.
-func stubbedRequest(token: String, url: URL = URL(string: "https://example.test/thing")!) -> URLRequest {
+func stubbedRequest(token: String, url: URL = URL(string: "https://example.test/thing")!)
+  -> URLRequest
+{
   var request = URLRequest(url: url)
   request.setValue(token, forHTTPHeaderField: StubURLProtocol.tokenHeader)
   return request
@@ -96,6 +99,11 @@ func stubbedRequest(token: String, url: URL = URL(string: "https://example.test/
 /// A thread-safe attempt counter for the "fail N times then succeed" retry stub.
 final class AttemptCounter: @unchecked Sendable {
   private let count = OSAllocatedUnfairLock(initialState: 0)
-  @discardableResult func increment() -> Int { count.withLock { $0 += 1; return $0 } }
+  @discardableResult func increment() -> Int {
+    count.withLock {
+      $0 += 1
+      return $0
+    }
+  }
   var value: Int { count.withLock { $0 } }
 }

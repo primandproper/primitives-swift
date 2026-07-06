@@ -24,7 +24,8 @@ extension URLSessionWebSocketTask: WebSocketConnection {
   /// Bridges `URLSessionWebSocketTask.sendPing(pongReceiveHandler:)`'s completion handler into the async
   /// seam: the pong handler fires with `nil` on a received pong and with an error otherwise.
   public func sendPing() async throws {
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+    try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Void, any Error>) in
       self.sendPing { error in
         if let error {
           continuation.resume(throwing: error)

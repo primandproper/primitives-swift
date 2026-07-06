@@ -61,7 +61,10 @@ struct MockEventStreamConnectorTests {
     _ = try await connector.connect(to: url, headers: ["Authorization": "Bearer t"])
 
     let calls = await connector.connectCalls
-    #expect(calls == [MockEventStreamConnector.ConnectCall(url: url, headers: ["Authorization": "Bearer t"])])
+    #expect(
+      calls == [
+        MockEventStreamConnector.ConnectCall(url: url, headers: ["Authorization": "Bearer t"])
+      ])
   }
 
   @Test("returns the stream from the injected factory")
@@ -82,9 +85,10 @@ struct MockBidirectionalEventStreamConnectorTests {
     let connector = MockBidirectionalEventStreamConnector()
     let url = URL(string: "wss://example.test/ws")!
     _ = try await connector.connect(to: url)
-    #expect(await connector.connectCalls == [
-      MockBidirectionalEventStreamConnector.ConnectCall(url: url, headers: [:])
-    ])
+    #expect(
+      await connector.connectCalls == [
+        MockBidirectionalEventStreamConnector.ConnectCall(url: url, headers: [:])
+      ])
   }
 }
 

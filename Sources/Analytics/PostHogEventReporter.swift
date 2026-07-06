@@ -80,7 +80,8 @@ public actor PostHogEventReporter: EventReporter {
 
   public func addUser(userID: String, properties: [String: AnalyticsPropertyValue]) async throws {
     // Identify semantics: event "$identify", traits carried in "$set".
-    try await enqueue(Event(event: "$identify", distinctId: userID, properties: nil, set: properties))
+    try await enqueue(
+      Event(event: "$identify", distinctId: userID, properties: nil, set: properties))
   }
 
   public func eventOccurred(
@@ -94,7 +95,8 @@ public actor PostHogEventReporter: EventReporter {
   ) async throws {
     // PostHog has no separate anonymous channel; the anonymous id is the distinct id, exactly as Go's
     // reporter enqueues a Capture with DistinctId = anonymousID.
-    try await enqueue(Event(event: event, distinctId: anonymousID, properties: properties, set: nil))
+    try await enqueue(
+      Event(event: event, distinctId: anonymousID, properties: properties, set: nil))
   }
 
   /// Delivers the buffered batch immediately, if any. Also invoked by ``close()``.

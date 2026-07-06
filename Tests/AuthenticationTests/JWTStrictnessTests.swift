@@ -37,7 +37,8 @@ struct JWTStrictnessTests {
     let header = ["alg": "none", "typ": "JWT"]
     let unsigned =
       Base64URLNoPad.encode(try! JSONSerialization.data(withJSONObject: header)) + "."
-      + Base64URLNoPad.encode(try! JSONSerialization.data(withJSONObject: ["sub": "u", "exp": 2_000_000]))
+      + Base64URLNoPad.encode(
+        try! JSONSerialization.data(withJSONObject: ["sub": "u", "exp": 2_000_000]))
       + "."  // empty signature segment, as an alg:none token carries
     #expect(throws: JWTError.algorithmMismatch(expected: "HS256", found: "none")) {
       _ = try parser().parse(unsigned, at: now)
@@ -47,9 +48,11 @@ struct JWTStrictnessTests {
   @Test("rejects an HS256-labelled token with an empty signature")
   func emptySignature() {
     let input =
-      Base64URLNoPad.encode(try! JSONSerialization.data(withJSONObject: ["alg": "HS256", "typ": "JWT"]))
+      Base64URLNoPad.encode(
+        try! JSONSerialization.data(withJSONObject: ["alg": "HS256", "typ": "JWT"]))
       + "."
-      + Base64URLNoPad.encode(try! JSONSerialization.data(withJSONObject: ["sub": "u", "exp": 2_000_000]))
+      + Base64URLNoPad.encode(
+        try! JSONSerialization.data(withJSONObject: ["sub": "u", "exp": 2_000_000]))
     let noSig = input + "."
     #expect(throws: JWTError.invalidSignature) {
       _ = try parser().parse(noSig, at: now)

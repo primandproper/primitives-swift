@@ -1,7 +1,7 @@
+import ObservabilityLog
 import Testing
 
 @testable import Observability
-import ObservabilityLog
 
 @Suite("ObservabilityLog — swift-log interop")
 struct SwiftLogLoggerTests {

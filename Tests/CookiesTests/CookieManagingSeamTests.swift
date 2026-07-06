@@ -51,7 +51,9 @@ struct MockCookieManagingTests {
     #expect(!token.isEmpty)
     #expect(mock.encodeCalls.count == 1)
     #expect(mock.encodeCalls[0].name == "session")
-    #expect(mock.encodeCalls[0].payload == (try JSONEncoder().encode(value)))
+    // Assert on the decoded payload, not raw JSON bytes: JSONEncoder does not guarantee key order
+    // without `.sortedKeys`, so comparing bytes from two independent encodes is flaky.
+    #expect(try JSONDecoder().decode(Payload.self, from: mock.encodeCalls[0].payload) == value)
   }
 
   @Test("encode/decode round-trip returns the original value and records both calls")

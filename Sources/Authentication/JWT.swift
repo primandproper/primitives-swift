@@ -228,13 +228,15 @@ public struct JWTParser: Sendable {
   private func verifySignature(_ signature: Data, over signingInput: Data) -> Bool {
     switch key {
     case .hmac(let symmetricKey):
-      let expected = CryptoKit.HMAC<SHA256>.authenticationCode(for: signingInput, using: symmetricKey)
+      let expected = CryptoKit.HMAC<SHA256>.authenticationCode(
+        for: signingInput, using: symmetricKey)
       return constantTimeEqual(Array(expected), Array(signature))
 
     case .ecdsaP256(let publicKey):
       // JWS ES256 signatures are the raw r‖s concatenation (RFC 7518 §3.4), which is exactly
       // CryptoKit's `rawRepresentation`.
-      guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature) else {
+      guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature)
+      else {
         return false
       }
       return publicKey.isValidSignature(ecdsaSignature, for: signingInput)

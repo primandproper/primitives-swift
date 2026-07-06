@@ -20,7 +20,9 @@ private func makeStubbedOpenAI(
   return (provider, host, CapturedRequest())
 }
 
-private func okResponse(content: String, finishReason: String = "stop", totalTokens: Int = 42) -> Data {
+private func okResponse(content: String, finishReason: String = "stop", totalTokens: Int = 42)
+  -> Data
+{
   Data(
     """
     {"choices":[{"message":{"role":"assistant","content":"\(content)"},"finish_reason":"\(finishReason)"}],"usage":{"total_tokens":\(totalTokens)}}
@@ -85,8 +87,10 @@ struct OpenAIProviderTests {
       return .respond(status: 200, body: okResponse(content: "ok"), headers: [:])
     }
     defer { LLMStubURLProtocol.unregister(host1) }
-    _ = try await configured.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
-    let body1 = try #require(try JSONSerialization.jsonObject(with: captured1.body) as? [String: Any])
+    _ = try await configured.completion(
+      CompletionParams(messages: [Message(role: .user, content: "x")]))
+    let body1 = try #require(
+      try JSONSerialization.jsonObject(with: captured1.body) as? [String: Any])
     #expect(body1["model"] as? String == "gpt-4.1-mini")
 
     // built-in default when neither is set
@@ -97,7 +101,8 @@ struct OpenAIProviderTests {
     }
     defer { LLMStubURLProtocol.unregister(host2) }
     _ = try await bare.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
-    let body2 = try #require(try JSONSerialization.jsonObject(with: captured2.body) as? [String: Any])
+    let body2 = try #require(
+      try JSONSerialization.jsonObject(with: captured2.body) as? [String: Any])
     #expect(body2["model"] as? String == OpenAIProvider.defaultModel)
   }
 
@@ -115,7 +120,8 @@ struct OpenAIProviderTests {
     defer { LLMStubURLProtocol.unregister(host) }
 
     await #expect(throws: LLMError.rateLimit(retryAfter: 30)) {
-      try await provider.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
+      try await provider.completion(
+        CompletionParams(messages: [Message(role: .user, content: "x")]))
     }
     #expect(calls.value == 1)  // no internal retry
   }
@@ -129,7 +135,8 @@ struct OpenAIProviderTests {
     defer { LLMStubURLProtocol.unregister(host) }
 
     await #expect(throws: LLMError.authentication) {
-      try await provider.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
+      try await provider.completion(
+        CompletionParams(messages: [Message(role: .user, content: "x")]))
     }
   }
 
@@ -142,7 +149,8 @@ struct OpenAIProviderTests {
     defer { LLMStubURLProtocol.unregister(host) }
 
     await #expect {
-      try await provider.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
+      try await provider.completion(
+        CompletionParams(messages: [Message(role: .user, content: "x")]))
     } throws: { error in
       guard case LLMError.malformedResponse = error else { return false }
       return true

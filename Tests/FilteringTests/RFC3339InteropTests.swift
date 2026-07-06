@@ -38,15 +38,30 @@ private struct NanoVector {
 @Suite("RFC3339Nano Go→Swift interop (REPO-07)")
 struct RFC3339InteropTests {
   private let vectors: [NanoVector] = [
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20Z", unixNanos: 1_700_000_000_000_000_000, exactInSwift: true),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.5Z", unixNanos: 1_700_000_000_500_000_000, exactInSwift: true),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.12Z", unixNanos: 1_700_000_000_120_000_000, exactInSwift: true),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.123Z", unixNanos: 1_700_000_000_123_000_000, exactInSwift: true),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.123456Z", unixNanos: 1_700_000_000_123_456_000, exactInSwift: false),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.123456789Z", unixNanos: 1_700_000_000_123_456_789, exactInSwift: false),
-    NanoVector(rfc3339nano: "2023-11-14T22:13:20.9Z", unixNanos: 1_700_000_000_900_000_000, exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20Z", unixNanos: 1_700_000_000_000_000_000, exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.5Z", unixNanos: 1_700_000_000_500_000_000,
+      exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.12Z", unixNanos: 1_700_000_000_120_000_000,
+      exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.123Z", unixNanos: 1_700_000_000_123_000_000,
+      exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.123456Z", unixNanos: 1_700_000_000_123_456_000,
+      exactInSwift: false),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.123456789Z", unixNanos: 1_700_000_000_123_456_789,
+      exactInSwift: false),
+    NanoVector(
+      rfc3339nano: "2023-11-14T22:13:20.9Z", unixNanos: 1_700_000_000_900_000_000,
+      exactInSwift: true),
     // A non-UTC offset — same instant as the ".123" UTC value, written as -05:00.
-    NanoVector(rfc3339nano: "2023-11-14T17:13:20.123-05:00", unixNanos: 1_700_000_000_123_000_000, exactInSwift: true),
+    NanoVector(
+      rfc3339nano: "2023-11-14T17:13:20.123-05:00", unixNanos: 1_700_000_000_123_000_000,
+      exactInSwift: true),
   ]
 
   @Test("parses every variable-precision RFC3339Nano string Go emits")
@@ -85,7 +100,8 @@ struct RFC3339InteropTests {
       let gotNanos = Int64((date.timeIntervalSince1970 * 1_000_000_000).rounded())
       // The µs/ns digits are dropped: the parsed value equals the millisecond-truncated instant.
       let msTruncated = (v.unixNanos / 1_000_000) * 1_000_000
-      #expect(abs(gotNanos - msTruncated) < 1_000, "\(v.rfc3339nano) should truncate to \(msTruncated)")
+      #expect(
+        abs(gotNanos - msTruncated) < 1_000, "\(v.rfc3339nano) should truncate to \(msTruncated)")
       // And it is genuinely lossy versus Go's full-precision value.
       #expect(gotNanos != v.unixNanos)
     }

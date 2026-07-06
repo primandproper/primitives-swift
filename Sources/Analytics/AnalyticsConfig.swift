@@ -19,7 +19,9 @@ public struct AnalyticsConfig: Codable, Sendable, Equatable {
   public var proxySources: ProxySourcesConfig
   public var source: SourceConfig
 
-  public init(proxySources: ProxySourcesConfig = ProxySourcesConfig(), source: SourceConfig = SourceConfig()) {
+  public init(
+    proxySources: ProxySourcesConfig = ProxySourcesConfig(), source: SourceConfig = SourceConfig()
+  ) {
     self.proxySources = proxySources
     self.source = source
   }
@@ -31,7 +33,8 @@ public struct AnalyticsConfig: Codable, Sendable, Equatable {
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     proxySources =
-      try container.decodeIfPresent(ProxySourcesConfig.self, forKey: .proxySources) ?? ProxySourcesConfig()
+      try container.decodeIfPresent(ProxySourcesConfig.self, forKey: .proxySources)
+      ?? ProxySourcesConfig()
     source = try SourceConfig(from: decoder)
   }
 

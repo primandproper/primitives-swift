@@ -15,7 +15,8 @@ enum AnalyticsStubOutcome: Sendable {
 /// other. The handler both captures the request it saw and decides the response.
 final class AnalyticsStubURLProtocol: URLProtocol, @unchecked Sendable {
   private static let registry =
-    OSAllocatedUnfairLock<[String: @Sendable (URLRequest) -> AnalyticsStubOutcome]>(initialState: [:])
+    OSAllocatedUnfairLock<[String: @Sendable (URLRequest) -> AnalyticsStubOutcome]>(
+      initialState: [:])
 
   static func register(
     host: String, _ handler: @escaping @Sendable (URLRequest) -> AnalyticsStubOutcome
@@ -27,7 +28,8 @@ final class AnalyticsStubURLProtocol: URLProtocol, @unchecked Sendable {
     registry.withLock { $0[host] = nil }
   }
 
-  private static func handler(for host: String) -> (@Sendable (URLRequest) -> AnalyticsStubOutcome)? {
+  private static func handler(for host: String) -> (@Sendable (URLRequest) -> AnalyticsStubOutcome)?
+  {
     registry.withLock { $0[host] }
   }
 
@@ -35,18 +37,19 @@ final class AnalyticsStubURLProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
-    guard let host = request.url?.host, let handler = AnalyticsStubURLProtocol.handler(for: host) else {
+    guard let host = request.url?.host, let handler = AnalyticsStubURLProtocol.handler(for: host)
+    else {
       client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
       return
     }
     switch handler(request) {
-    case let .respond(status, body, headers):
+    case .respond(let status, let body, let headers):
       let response = HTTPURLResponse(
         url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: body)
       client?.urlProtocolDidFinishLoading(self)
-    case let .fail(error):
+    case .fail(let error):
       client?.urlProtocol(self, didFailWithError: error)
     }
   }
@@ -84,7 +87,12 @@ func analyticsRequestBody(_ request: URLRequest) -> Data {
 /// A thread-safe call counter, used to prove a reporter buffers (zero requests) until flushed.
 final class AnalyticsCallCounter: @unchecked Sendable {
   private let state = OSAllocatedUnfairLock(initialState: 0)
-  @discardableResult func increment() -> Int { state.withLock { $0 += 1; return $0 } }
+  @discardableResult func increment() -> Int {
+    state.withLock {
+      $0 += 1
+      return $0
+    }
+  }
   var value: Int { state.withLock { $0 } }
 }
 

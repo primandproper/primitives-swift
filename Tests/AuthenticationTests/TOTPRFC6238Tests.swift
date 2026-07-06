@@ -33,7 +33,8 @@ struct TOTPRFC6238AllVectorsTests {
     ])
   func sha1(unix: Double, expected: String) throws {
     let totp = TOTP(digits: 8, algorithm: .sha1)
-    #expect(try totp.generate(secret: Self.sha1Secret, at: Date(timeIntervalSince1970: unix)) == expected)
+    #expect(
+      try totp.generate(secret: Self.sha1Secret, at: Date(timeIntervalSince1970: unix)) == expected)
   }
 
   @Test(
@@ -48,7 +49,9 @@ struct TOTPRFC6238AllVectorsTests {
     ])
   func sha256(unix: Double, expected: String) throws {
     let totp = TOTP(digits: 8, algorithm: .sha256)
-    #expect(try totp.generate(secret: Self.sha256Secret, at: Date(timeIntervalSince1970: unix)) == expected)
+    #expect(
+      try totp.generate(secret: Self.sha256Secret, at: Date(timeIntervalSince1970: unix))
+        == expected)
   }
 
   @Test(
@@ -63,6 +66,8 @@ struct TOTPRFC6238AllVectorsTests {
     ])
   func sha512(unix: Double, expected: String) throws {
     let totp = TOTP(digits: 8, algorithm: .sha512)
-    #expect(try totp.generate(secret: Self.sha512Secret, at: Date(timeIntervalSince1970: unix)) == expected)
+    #expect(
+      try totp.generate(secret: Self.sha512Secret, at: Date(timeIntervalSince1970: unix))
+        == expected)
   }
 }

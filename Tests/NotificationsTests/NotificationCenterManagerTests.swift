@@ -78,7 +78,8 @@ struct MockNotificationCenterManagerTests {
   @Test("schedule records requests in order")
   func recordsScheduledRequests() async throws {
     let manager = MockNotificationCenterManager()
-    let first = LocalNotificationRequest(identifier: "a", message: PushMessage(title: "t1", body: "b1"))
+    let first = LocalNotificationRequest(
+      identifier: "a", message: PushMessage(title: "t1", body: "b1"))
     let second = LocalNotificationRequest(
       identifier: "b", message: PushMessage(title: "t2", body: "b2", badgeCount: 2),
       trigger: .timeInterval(60, repeats: false))
@@ -94,7 +95,8 @@ struct MockNotificationCenterManagerTests {
   func recordsBeforeThrowing() async {
     let manager = MockNotificationCenterManager(
       scheduleHandler: { _ in throw NotificationsError.unsupportedProvider(.apnsFCM) })
-    let request = LocalNotificationRequest(identifier: "id", message: PushMessage(title: "t", body: "b"))
+    let request = LocalNotificationRequest(
+      identifier: "id", message: PushMessage(title: "t", body: "b"))
 
     await #expect(throws: NotificationsError.unsupportedProvider(.apnsFCM)) {
       try await manager.schedule(request)
@@ -130,71 +132,71 @@ struct MockNotificationCenterManagerTests {
 }
 
 #if canImport(UserNotifications)
-import UserNotifications
+  import UserNotifications
 
-/// Structural coverage of the live conformer's hermetic surface: the pure `PushMessage`/`Trigger` →
-/// UserNotifications mapping and the device-token fan-out, neither of which touches
-/// `UNUserNotificationCenter.current()`. Authorization/scheduling against the real center need an app host
-/// and are not exercised here.
-@Suite("SystemNotificationCenterManager mapping")
-struct SystemNotificationCenterManagerTests {
-  @Test("makeContent maps title, body, and badge")
-  func contentWithBadge() {
-    let content = SystemNotificationCenterManager.makeContent(
-      from: PushMessage(title: "Hello", body: "World", badgeCount: 5))
-    #expect(content.title == "Hello")
-    #expect(content.body == "World")
-    #expect(content.badge?.intValue == 5)
-  }
+  /// Structural coverage of the live conformer's hermetic surface: the pure `PushMessage`/`Trigger` →
+  /// UserNotifications mapping and the device-token fan-out, neither of which touches
+  /// `UNUserNotificationCenter.current()`. Authorization/scheduling against the real center need an app host
+  /// and are not exercised here.
+  @Suite("SystemNotificationCenterManager mapping")
+  struct SystemNotificationCenterManagerTests {
+    @Test("makeContent maps title, body, and badge")
+    func contentWithBadge() {
+      let content = SystemNotificationCenterManager.makeContent(
+        from: PushMessage(title: "Hello", body: "World", badgeCount: 5))
+      #expect(content.title == "Hello")
+      #expect(content.body == "World")
+      #expect(content.badge?.intValue == 5)
+    }
 
-  @Test("makeContent leaves the badge unset when badgeCount is nil")
-  func contentWithoutBadge() {
-    let content = SystemNotificationCenterManager.makeContent(
-      from: PushMessage(title: "Hello", body: "World"))
-    #expect(content.badge == nil)
-  }
+    @Test("makeContent leaves the badge unset when badgeCount is nil")
+    func contentWithoutBadge() {
+      let content = SystemNotificationCenterManager.makeContent(
+        from: PushMessage(title: "Hello", body: "World"))
+      #expect(content.badge == nil)
+    }
 
-  @Test("makeTrigger maps nil to an immediate (nil) trigger")
-  func immediateTrigger() {
-    #expect(SystemNotificationCenterManager.makeTrigger(from: nil) == nil)
-  }
+    @Test("makeTrigger maps nil to an immediate (nil) trigger")
+    func immediateTrigger() {
+      #expect(SystemNotificationCenterManager.makeTrigger(from: nil) == nil)
+    }
 
-  @Test("makeTrigger maps a timeInterval trigger")
-  func timeIntervalTrigger() {
-    let trigger =
-      SystemNotificationCenterManager.makeTrigger(from: .timeInterval(60, repeats: true))
-      as? UNTimeIntervalNotificationTrigger
-    #expect(trigger?.timeInterval == 60)
-    #expect(trigger?.repeats == true)
-  }
+    @Test("makeTrigger maps a timeInterval trigger")
+    func timeIntervalTrigger() {
+      let trigger =
+        SystemNotificationCenterManager.makeTrigger(from: .timeInterval(60, repeats: true))
+        as? UNTimeIntervalNotificationTrigger
+      #expect(trigger?.timeInterval == 60)
+      #expect(trigger?.repeats == true)
+    }
 
-  @Test("makeRequest carries identifier, content, and trigger")
-  func fullRequest() {
-    let request = SystemNotificationCenterManager.makeRequest(
-      from: LocalNotificationRequest(
-        identifier: "reminder-1", message: PushMessage(title: "t", body: "b")))
-    #expect(request.identifier == "reminder-1")
-    #expect(request.content.title == "t")
-    #expect(request.trigger == nil)
-  }
+    @Test("makeRequest carries identifier, content, and trigger")
+    func fullRequest() {
+      let request = SystemNotificationCenterManager.makeRequest(
+        from: LocalNotificationRequest(
+          identifier: "reminder-1", message: PushMessage(title: "t", body: "b")))
+      #expect(request.identifier == "reminder-1")
+      #expect(request.content.title == "t")
+      #expect(request.trigger == nil)
+    }
 
-  @Test("AuthorizationOptions map onto the matching UNAuthorizationOptions")
-  func authorizationOptionMapping() {
-    let mapped: AuthorizationOptions = [.alert, .sound, .provisional]
-    let un = mapped.unAuthorizationOptions
-    #expect(un.contains(.alert))
-    #expect(un.contains(.sound))
-    #expect(un.contains(.provisional))
-    #expect(!un.contains(.badge))
-    #expect(AuthorizationOptions([]).unAuthorizationOptions.isEmpty)
-  }
+    @Test("AuthorizationOptions map onto the matching UNAuthorizationOptions")
+    func authorizationOptionMapping() {
+      let mapped: AuthorizationOptions = [.alert, .sound, .provisional]
+      let un = mapped.unAuthorizationOptions
+      #expect(un.contains(.alert))
+      #expect(un.contains(.sound))
+      #expect(un.contains(.provisional))
+      #expect(!un.contains(.badge))
+      #expect(AuthorizationOptions([]).unAuthorizationOptions.isEmpty)
+    }
 
-  @Test("device-token fan-out works without touching the notification center")
-  func liveTokenFanOut() async {
-    let manager = SystemNotificationCenterManager()
-    var iterator = manager.deviceTokens().makeAsyncIterator()
-    manager.receiveDeviceToken(Data([0x01, 0x02]))
-    #expect(await iterator.next()?.hexString == "0102")
+    @Test("device-token fan-out works without touching the notification center")
+    func liveTokenFanOut() async {
+      let manager = SystemNotificationCenterManager()
+      var iterator = manager.deviceTokens().makeAsyncIterator()
+      manager.receiveDeviceToken(Data([0x01, 0x02]))
+      #expect(await iterator.next()?.hexString == "0102")
+    }
   }
-}
 #endif

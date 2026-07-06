@@ -201,6 +201,7 @@ struct Base32Tests {
     #expect(Base32.decode("MZXW") == Data([0x66, 0x6f]))  // count 4 -> 2 bytes
     #expect(Base32.decode("MZXWA") == Data([0x66, 0x6f, 0x60]))  // count 5 -> 3 bytes
     #expect(Base32.decode("MZXW6AB") == Data([0x66, 0x6f, 0x6f, 0x00]))  // count 7 -> 4 bytes
-    #expect(Base32.decode("MZXW6YTB") == Data([0x66, 0x6f, 0x6f, 0x62, 0x61]))  // count 8 -> 5 bytes
+    // count 8 -> 5 bytes
+    #expect(Base32.decode("MZXW6YTB") == Data([0x66, 0x6f, 0x6f, 0x62, 0x61]))
   }
 }

@@ -44,13 +44,19 @@ public protocol Operation: AnyObject, Sendable {
 extension Operation {
   /// Scalar sugar over the `AttributeValue` requirements so `op.set(Keys.responseStatus, code)`
   /// (an `Int`) and `op.set("name", "abc")` (a `String` literal) work without an explicit case.
-  @discardableResult public func set(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+  @discardableResult public func set(_ key: String, _ value: some AttributeRepresentable)
+    -> any Operation
+  {
     set(key, value.attributeValue)
   }
-  @discardableResult public func spanOnly(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+  @discardableResult public func spanOnly(_ key: String, _ value: some AttributeRepresentable)
+    -> any Operation
+  {
     spanOnly(key, value.attributeValue)
   }
-  @discardableResult public func logOnly(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+  @discardableResult public func logOnly(_ key: String, _ value: some AttributeRepresentable)
+    -> any Operation
+  {
     logOnly(key, value.attributeValue)
   }
 }

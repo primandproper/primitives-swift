@@ -68,7 +68,8 @@ public actor FeatureFlagManagerMock: FeatureFlagManager {
     stringValue: (@Sendable (String, String, EvaluationContext) async throws -> String)? = nil,
     int64Value: (@Sendable (String, Int64, EvaluationContext) async throws -> Int64)? = nil,
     float64Value: (@Sendable (String, Double, EvaluationContext) async throws -> Double)? = nil,
-    objectValue: (@Sendable (String, FlagValue, EvaluationContext) async throws -> FlagValue)? = nil,
+    objectValue: (@Sendable (String, FlagValue, EvaluationContext) async throws -> FlagValue)? =
+      nil,
     close: (@Sendable () async throws -> Void)? = nil
   ) {
     self.canUseFeatureHandler = canUseFeature

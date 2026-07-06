@@ -50,7 +50,9 @@ struct FlagValueTests {
     #expect(try decoder.decode(FlagValue.self, from: Data("3.14".utf8)) == .number(3.14))
     #expect(try decoder.decode(FlagValue.self, from: Data("true".utf8)) == .bool(true))
     #expect(try decoder.decode(FlagValue.self, from: Data("null".utf8)) == .null)
-    #expect(try decoder.decode(FlagValue.self, from: Data("[1,2]".utf8)) == .array([.number(1), .number(2)]))
+    #expect(
+      try decoder.decode(FlagValue.self, from: Data("[1,2]".utf8))
+        == .array([.number(1), .number(2)]))
     #expect(
       try decoder.decode(FlagValue.self, from: Data(#"{"key":"value"}"#.utf8))
         == .object(["key": .string("value")]))

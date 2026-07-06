@@ -68,11 +68,13 @@ public struct OSLogLogger: Logger {
   }
 
   public func info(_ message: String) {
-    backing.info("\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
+    backing.info(
+      "\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
   }
 
   public func debug(_ message: String) {
-    backing.debug("\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
+    backing.debug(
+      "\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
   }
 
   public func error(_ whatWasHappening: String, _ error: Error) {

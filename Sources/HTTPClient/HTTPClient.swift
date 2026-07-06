@@ -73,7 +73,8 @@ public struct HTTPClient: Sendable {
     metrics: any MetricsProvider,
     retryPolicy: (any RetryPolicy)? = nil,
     circuitBreaker: any CircuitBreaker = NoopCircuitBreaker(),
-    statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient.defaultStatusFailureClassifier,
+    statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient
+      .defaultStatusFailureClassifier,
     retryableStatus: @escaping RetryableStatusClassifier = HTTPClient.defaultRetryableStatus
   ) {
     self.session = session
@@ -96,7 +97,8 @@ public struct HTTPClient: Sendable {
     pillars: Pillars,
     retryPolicy: (any RetryPolicy)? = nil,
     circuitBreaker: any CircuitBreaker = NoopCircuitBreaker(),
-    statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient.defaultStatusFailureClassifier,
+    statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient
+      .defaultStatusFailureClassifier,
     retryableStatus: @escaping RetryableStatusClassifier = HTTPClient.defaultRetryableStatus
   ) {
     let cfg = config.ensuringDefaults()
@@ -154,7 +156,8 @@ public struct HTTPClient: Sendable {
       let retriesEnabled = retryPolicy != nil && (Self.isIdempotent(method) || retryNonIdempotent)
 
       let attempt: @Sendable () async throws -> HTTPResponse = {
-        try await performOnce(request, op: op, method: method, classifyRetryableStatus: retriesEnabled)
+        try await performOnce(
+          request, op: op, method: method, classifyRetryableStatus: retriesEnabled)
       }
 
       guard retriesEnabled, let retryPolicy else {

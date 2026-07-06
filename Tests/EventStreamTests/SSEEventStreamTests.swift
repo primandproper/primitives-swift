@@ -163,7 +163,8 @@ struct SSEEventStreamConnectorTests {
 
     let connector = SSEEventStreamConnector(
       session: streamingStubbedSession(), observer: recordingObserver("test"))
-    let stream = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+    let stream = try await connector.connect(
+      to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     defer { Task { await stream.close() } }
 
     var received: [Event] = []
@@ -172,9 +173,10 @@ struct SSEEventStreamConnectorTests {
     }
 
     #expect(received.map(\.type) == ["first", "second"])
-    #expect(received.map { String(decoding: $0.payload ?? Data(), as: UTF8.self) } == [
-      #"{"n":1}"#, #"{"n":2}"#,
-    ])
+    #expect(
+      received.map { String(decoding: $0.payload ?? Data(), as: UTF8.self) } == [
+        #"{"n":1}"#, #"{"n":2}"#,
+      ])
   }
 
   @Test("a line split across two network chunks still parses as one event")
@@ -190,7 +192,8 @@ struct SSEEventStreamConnectorTests {
 
     let connector = SSEEventStreamConnector(
       session: streamingStubbedSession(), observer: recordingObserver("test"))
-    let stream = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+    let stream = try await connector.connect(
+      to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     defer { Task { await stream.close() } }
 
     var iterator = stream.events.makeAsyncIterator()
@@ -261,7 +264,8 @@ struct SSEEventStreamConnectorTests {
       session: streamingStubbedSession(), observer: recordingObserver("test"))
 
     await #expect(throws: EventStreamError.connectionFailed(status: 503)) {
-      _ = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+      _ = try await connector.connect(
+        to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     }
   }
 

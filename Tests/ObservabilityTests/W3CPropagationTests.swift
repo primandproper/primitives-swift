@@ -35,7 +35,8 @@ struct W3CPropagationTests {
     var request = URLRequest(url: URL(string: "https://example.com")!)
     W3CPropagation.inject(ctx, into: &request, tracestate: "vendor=abc")
 
-    #expect(request.value(forHTTPHeaderField: "traceparent") == W3CPropagation.traceparent(for: ctx))
+    #expect(
+      request.value(forHTTPHeaderField: "traceparent") == W3CPropagation.traceparent(for: ctx))
     #expect(request.value(forHTTPHeaderField: "tracestate") == "vendor=abc")
 
     let extracted = W3CPropagation.extract(from: request)
@@ -47,7 +48,8 @@ struct W3CPropagationTests {
   func headersOmitsEmptyTracestate() {
     let ctx = SpanContext.child(of: nil)
     #expect(W3CPropagation.headers(for: ctx)[W3CPropagation.tracestateHeader] == nil)
-    #expect(W3CPropagation.headers(for: ctx, tracestate: "")[W3CPropagation.tracestateHeader] == nil)
+    #expect(
+      W3CPropagation.headers(for: ctx, tracestate: "")[W3CPropagation.tracestateHeader] == nil)
     #expect(
       W3CPropagation.headers(for: ctx, tracestate: "a=b")[W3CPropagation.tracestateHeader] == "a=b")
   }

@@ -20,7 +20,8 @@ struct PurchaseModelsTests {
     let original = Entitlement(
       productID: "com.example.pro", transactionID: "42",
       purchaseDate: Date(timeIntervalSince1970: 1_700_000_000), expirationDate: nil, isActive: true)
-    let decoded = try JSONDecoder().decode(Entitlement.self, from: try JSONEncoder().encode(original))
+    let decoded = try JSONDecoder().decode(
+      Entitlement.self, from: try JSONEncoder().encode(original))
     #expect(decoded == original)
     #expect(decoded.id == "42")  // Identifiable keys off transactionID
   }

@@ -37,7 +37,9 @@ public final class MockWebSocketConnection: WebSocketConnection, @unchecked Send
 
   public var resumeCallCount: Int { state.withLock { $0.resumeCallCount } }
   public var sentMessages: [URLSessionWebSocketTask.Message] { state.withLock { $0.sentMessages } }
-  public var cancelledWith: URLSessionWebSocketTask.CloseCode? { state.withLock { $0.cancelledWith } }
+  public var cancelledWith: URLSessionWebSocketTask.CloseCode? {
+    state.withLock { $0.cancelledWith }
+  }
   public var pingCallCount: Int { state.withLock { $0.pingCallCount } }
 
   public init() {}
@@ -96,7 +98,8 @@ public final class MockWebSocketConnection: WebSocketConnection, @unchecked Send
       // Park until cancelled, then surface a `CancellationError` — the shape a real hung ping takes when
       // the heartbeat's timeout task wins the race and cancels this one.
       try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+        try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<Void, any Error>) in
           let resumeCancelled: Bool = state.withLock { s in
             if Task.isCancelled { return true }
             s.pingWaiters.append(continuation)

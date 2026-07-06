@@ -91,7 +91,8 @@ public enum W3CPropagation {
   /// Extracts a ``SpanContext`` from the `traceparent` header on `request`, if present and valid.
   public static func extract(from request: URLRequest) -> SpanContext? {
     guard let value = request.value(forHTTPHeaderField: traceparentHeader) else { return nil }
-    return extract(traceparent: value, tracestate: request.value(forHTTPHeaderField: tracestateHeader))
+    return extract(
+      traceparent: value, tracestate: request.value(forHTTPHeaderField: tracestateHeader))
   }
 
   // MARK: - Helpers

@@ -42,14 +42,14 @@ final class PHStubURLProtocol: URLProtocol, @unchecked Sendable {
       return
     }
     switch handler(request) {
-    case let .respond(status, body):
+    case .respond(let status, let body):
       let response = HTTPURLResponse(
         url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
         headerFields: ["Content-Type": "application/json"])!
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: body)
       client?.urlProtocolDidFinishLoading(self)
-    case let .fail(error):
+    case .fail(let error):
       client?.urlProtocol(self, didFailWithError: error)
     }
   }
@@ -249,7 +249,8 @@ struct PostHogFeatureFlagManagerTests {
     defer { PHStubURLProtocol.unregister(host) }
 
     #expect(
-      try await makeManager(host: host).int64Value(for: "int-flag", default: 5, context: evalContext())
+      try await makeManager(host: host).int64Value(
+        for: "int-flag", default: 5, context: evalContext())
         == 5)
   }
 

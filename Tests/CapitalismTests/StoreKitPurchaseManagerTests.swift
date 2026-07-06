@@ -70,7 +70,8 @@ private func sampleEntitlement(_ tx: String = "7") -> Entitlement {
 /// REPO-10: unit tests for ``StoreKitPurchaseManager`` orchestration through the ``StoreKitClient`` seam.
 @Suite("StoreKitPurchaseManager orchestration (via StoreKitClient fake)")
 struct StoreKitPurchaseManagerTests {
-  private func manager(_ client: FakeStoreKitClient) -> (StoreKitPurchaseManager, RecordingObserver) {
+  private func manager(_ client: FakeStoreKitClient) -> (StoreKitPurchaseManager, RecordingObserver)
+  {
     let observer = recordingObserver(StoreKitPurchaseManager.o11yName)
     return (StoreKitPurchaseManager(observer: observer, client: client), observer)
   }

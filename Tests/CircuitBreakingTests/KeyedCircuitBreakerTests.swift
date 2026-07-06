@@ -32,7 +32,8 @@ struct PartitionedCircuitBreakerTests {
   @Test("breaks one key in isolation")
   func breaksInIsolation() async {
     let broken = StandardCircuitBreaker(
-      name: "broken", errorRatePercentage: 50, minimumSampleThreshold: 1, resetTimeout: .seconds(60))
+      name: "broken", errorRatePercentage: 50, minimumSampleThreshold: 1, resetTimeout: .seconds(60)
+    )
     await broken.recordFailure()  // trips the heavy tenant's breaker
 
     let global = StandardCircuitBreaker(

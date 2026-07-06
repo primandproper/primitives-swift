@@ -66,7 +66,9 @@ private final class RecordingCounterFactory: MetricsFactory, @unchecked Sendable
     RecordingCounterHandler { self.onIncrement(label, dimensions) }
   }
 
-  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool) -> RecorderHandler {
+  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool)
+    -> RecorderHandler
+  {
     NOOPMetricsHandler.instance
   }
 

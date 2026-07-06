@@ -55,7 +55,8 @@ public struct SourceConfig: Codable, Sendable, Equatable {
   /// The ``AnalyticsProvider`` `provider` resolves to (trimmed, lowercased), or `nil` if empty/
   /// unrecognized — the same lenient-negotiation shape ``Encoding``'s `ContentType.from(header:)` uses.
   public var resolvedProvider: AnalyticsProvider? {
-    AnalyticsProvider(rawValue: provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    AnalyticsProvider(
+      rawValue: provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
   }
 
   /// Fills unset fields with Go's defaults. Mirrors `SourceConfig.EnsureDefaults`.

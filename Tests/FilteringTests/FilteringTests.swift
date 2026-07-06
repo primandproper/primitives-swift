@@ -53,7 +53,8 @@ struct QueryFilterTests {
     #expect(items["limit"] == "250")
 
     let under = QueryFilter(maxResponseSize: 25)
-    let underItems = Dictionary(uniqueKeysWithValues: under.queryItems().map { ($0.name, $0.value) })
+    let underItems = Dictionary(
+      uniqueKeysWithValues: under.queryItems().map { ($0.name, $0.value) })
     #expect(underItems["limit"] == "25")
   }
 

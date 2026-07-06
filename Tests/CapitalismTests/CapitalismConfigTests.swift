@@ -92,7 +92,8 @@ struct CapitalismConfigTests {
     }
   }
 
-  @Test("RevenueCat with no config throws missingProviderConfig before reaching the salsa20 refusal")
+  @Test(
+    "RevenueCat with no config throws missingProviderConfig before reaching the salsa20 refusal")
   func revenueCatMissingConfig() {
     #expect(throws: CapitalismConfigError.missingProviderConfig(.revenueCat)) {
       _ = try CapitalismConfig(provider: "revenuecat", enabled: true).provideManager(

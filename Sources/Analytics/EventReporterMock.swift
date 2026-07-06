@@ -45,7 +45,9 @@ public actor EventReporterMock: EventReporter {
   public init(
     closeHandler: (@Sendable () -> Void)? = nil,
     addUserHandler: (@Sendable (String, [String: AnalyticsPropertyValue]) throws -> Void)? = nil,
-    eventOccurredHandler: (@Sendable (String, String, [String: AnalyticsPropertyValue]) throws -> Void)? =
+    eventOccurredHandler: (
+      @Sendable (String, String, [String: AnalyticsPropertyValue]) throws -> Void
+    )? =
       nil,
     eventOccurredAnonymousHandler: (
       @Sendable (String, String, [String: AnalyticsPropertyValue]) throws -> Void
@@ -70,7 +72,8 @@ public actor EventReporterMock: EventReporter {
   public func eventOccurred(
     event: String, userID: String, properties: [String: AnalyticsPropertyValue]
   ) throws {
-    eventOccurredCalls.append(EventOccurredCall(event: event, userID: userID, properties: properties))
+    eventOccurredCalls.append(
+      EventOccurredCall(event: event, userID: userID, properties: properties))
     try eventOccurredHandler?(event, userID, properties)
   }
 

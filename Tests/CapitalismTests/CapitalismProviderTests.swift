@@ -16,7 +16,8 @@ struct CapitalismProviderTests {
       CapitalismError.unsupportedProvider(.revenueCat).errorDescription?.contains("revenuecat")
         == true)
     #expect(
-      CapitalismError.productNotFound("com.example.pro").errorDescription?.contains("com.example.pro")
+      CapitalismError.productNotFound("com.example.pro").errorDescription?.contains(
+        "com.example.pro")
         == true)
     #expect(CapitalismError.unverifiedTransaction.errorDescription != nil)
     #expect(CapitalismError.unknownPurchaseResult.errorDescription != nil)

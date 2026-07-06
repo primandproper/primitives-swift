@@ -19,7 +19,8 @@ struct SegmentConfigTests {
 
   @Test("decodes the Go JSON shape (\"apiToken\" key)")
   func decodesGoShape() throws {
-    let config = try JSONDecoder().decode(SegmentConfig.self, from: Data(#"{"apiToken":"tok"}"#.utf8))
+    let config = try JSONDecoder().decode(
+      SegmentConfig.self, from: Data(#"{"apiToken":"tok"}"#.utf8))
     #expect(config.apiToken == "tok")
   }
 

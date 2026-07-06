@@ -84,7 +84,8 @@ enum RawJSON: Codable, Sendable, Equatable {
     } else if let object = try? container.decode([String: RawJSON].self) {
       self = .object(object)
     } else {
-      throw DecodingError.dataCorruptedError(in: container, debugDescription: "unsupported JSON value")
+      throw DecodingError.dataCorruptedError(
+        in: container, debugDescription: "unsupported JSON value")
     }
   }
 

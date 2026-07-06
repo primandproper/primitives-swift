@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 import struct os.OSAllocatedUnfairLock
 
 @testable import Observability
@@ -302,7 +303,8 @@ struct OSLogRenderFormatTests {
 
   @Test("emitting through info/error does not crash and preserves render separation")
   func emitDoesNotCrash() {
-    let logger = OSLogLogger(subsystem: "t", category: "t", name: "svc").withValue(Keys.userID, "PII")
+    let logger = OSLogLogger(subsystem: "t", category: "t", name: "svc").withValue(
+      Keys.userID, "PII")
     logger.info("hi")
     logger.error("boom", MockError())
     #expect(Bool(true))

@@ -71,7 +71,8 @@ extension LLMError {
       // provider's error `code`/`type`; without that structured field we route on the message text and
       // otherwise fall through to the general invalid-request case.
       let lowered = message.lowercased()
-      if lowered.contains("model") && (lowered.contains("not found") || lowered.contains("does not exist"))
+      if lowered.contains("model")
+        && (lowered.contains("not found") || lowered.contains("does not exist"))
       {
         return .modelNotFound(model)
       }

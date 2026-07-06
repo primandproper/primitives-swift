@@ -96,7 +96,8 @@ struct ScaleToYieldTests {
 
   @Test("honors custom and zero precision")
   func precision() {
-    #expect(approx(scaleToYield(1.0, originalYield: 3, desiredYield: 7, precision: 3), 2.333, 0.001))
+    #expect(
+      approx(scaleToYield(1.0, originalYield: 3, desiredYield: 7, precision: 3), 2.333, 0.001))
     #expect(scaleToYield(2.7, originalYield: 4, desiredYield: 6, precision: 0) == 4.0)
   }
 

@@ -50,7 +50,8 @@ struct PostHogEventReporterWireTests {
     let (reporter, captured, _, host) = makeReporter()
     defer { AnalyticsStubURLProtocol.unregister(host) }
 
-    try await reporter.eventOccurred(event: "purchased", userID: "user-42", properties: ["amount": 9])
+    try await reporter.eventOccurred(
+      event: "purchased", userID: "user-42", properties: ["amount": 9])
     await reporter.close()
 
     let batch = try #require(captured.json()?["batch"] as? [[String: Any]])

@@ -41,7 +41,8 @@ public struct AppleCompressor: Compressor {
     maxDecompressedBytes: Int = AppleCompressor.defaultMaxDecompressedBytes
   ) {
     self.algorithm = algorithm
-    self.maxDecompressedBytes = maxDecompressedBytes > 0 ? maxDecompressedBytes : Self.defaultMaxDecompressedBytes
+    self.maxDecompressedBytes =
+      maxDecompressedBytes > 0 ? maxDecompressedBytes : Self.defaultMaxDecompressedBytes
   }
 
   public func compress(_ data: Data) throws -> Data {
@@ -55,7 +56,8 @@ public struct AppleCompressor: Compressor {
     guard let codec = algorithm.appleAlgorithm else {
       throw CompressionError.unsupportedAlgorithm(algorithm)
     }
-    return try stream(operation: COMPRESSION_STREAM_DECODE, codec: codec, input: data, cap: maxDecompressedBytes)
+    return try stream(
+      operation: COMPRESSION_STREAM_DECODE, codec: codec, input: data, cap: maxDecompressedBytes)
   }
 
   /// Runs the whole `input` through a one-shot `compression_stream` in the given direction.
@@ -86,10 +88,12 @@ public struct AppleCompressor: Compressor {
     var output = Data()
     let flags = Int32(COMPRESSION_STREAM_FINALIZE.rawValue)
 
-    let failure: CompressionError? = input.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> CompressionError? in
+    let failure: CompressionError? = input.withUnsafeBytes {
+      (raw: UnsafeRawBufferPointer) -> CompressionError? in
       // For empty input `baseAddress` is nil; a valid non-null pointer with src_size 0 is required,
       // so borrow `destination` as a never-read placeholder.
-      stream.src_ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) ?? UnsafePointer(destination)
+      stream.src_ptr =
+        raw.baseAddress?.assumingMemoryBound(to: UInt8.self) ?? UnsafePointer(destination)
       stream.src_size = raw.count
 
       while true {

@@ -41,7 +41,7 @@ let package = Package(
     .target(
       name: "Observability",
       dependencies: [
-        .product(name: "Metrics", package: "swift-metrics"),
+        .product(name: "Metrics", package: "swift-metrics")
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

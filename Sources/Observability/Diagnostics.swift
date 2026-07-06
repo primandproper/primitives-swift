@@ -90,7 +90,8 @@ struct DiagnosticsDispatcher {
     for source in payloads {
       let payload = source.asDiagnosticPayload()
       logger.info(
-        "MetricKit diagnostic payload: crashes=\(payload.crashes.count) hangs=\(payload.hangs.count)")
+        "MetricKit diagnostic payload: crashes=\(payload.crashes.count) hangs=\(payload.hangs.count)"
+      )
       handler?(payload)
     }
   }

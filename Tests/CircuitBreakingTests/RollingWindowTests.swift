@@ -34,7 +34,8 @@ struct RollingWindowTests {
     #expect(window.totals(at: 4).failures == 0)
   }
 
-  @Test("ring-slot reuse at the bucketCount wraparound clears the stale bucket instead of accumulating")
+  @Test(
+    "ring-slot reuse at the bucketCount wraparound clears the stale bucket instead of accumulating")
   func slotReuseClearsStaleBucket() {
     var window = RollingWindow(bucketCount: 3)
     window.recordFailure(at: 0)  // ring slot 0

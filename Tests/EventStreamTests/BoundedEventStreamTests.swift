@@ -26,7 +26,8 @@ private func drainAfterOvershoot(
 
 @Suite("BoundedEventStream buffering policy")
 struct BoundedEventStreamTests {
-  @Test("bufferingOldest keeps the oldest events and drops the overflow from a non-draining consumer")
+  @Test(
+    "bufferingOldest keeps the oldest events and drops the overflow from a non-draining consumer")
   func bufferingOldestKeepsOldest() async throws {
     // Five events overshoot a 2-slot buffer; e1,e2 fill it and e3–e5 are dropped.
     let received = try await drainAfterOvershoot(policy: .bufferingOldest(2), count: 5)

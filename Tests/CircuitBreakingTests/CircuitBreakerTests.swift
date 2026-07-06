@@ -83,7 +83,8 @@ struct StandardCircuitBreakerTests {
   @Test("does not trip below the minimum sample threshold")
   func respectsSampleThreshold() async {
     let cb = StandardCircuitBreaker(
-      name: "samples", errorRatePercentage: 1, minimumSampleThreshold: 5, resetTimeout: .seconds(60))
+      name: "samples", errorRatePercentage: 1, minimumSampleThreshold: 5, resetTimeout: .seconds(60)
+    )
 
     // A 100% error rate, but only 4 samples < threshold of 5.
     for _ in 0..<4 { await cb.recordFailure() }
@@ -209,7 +210,8 @@ struct StandardCircuitBreakerTests {
     // execute must treat it as cancellation (consistent with HTTPClient) and not record a breaker
     // failure. Rate 1% at 1 sample would trip on any single real failure; this must not be one.
     let cb = StandardCircuitBreaker(
-      name: "urlcancel", errorRatePercentage: 1, minimumSampleThreshold: 1, resetTimeout: .seconds(60))
+      name: "urlcancel", errorRatePercentage: 1, minimumSampleThreshold: 1,
+      resetTimeout: .seconds(60))
 
     await #expect(throws: URLError.self) {
       try await cb.execute { throw URLError(.cancelled) }
@@ -241,7 +243,8 @@ struct StandardCircuitBreakerTests {
     #expect(await cb.canProceed())
   }
 
-  @Test("a failed half-open trial re-opens the breaker when resetTimeout > window, driven by the clock")
+  @Test(
+    "a failed half-open trial re-opens the breaker when resetTimeout > window, driven by the clock")
   func halfOpenTrialReopensUnderResetTimeoutGreaterThanWindow() async {
     // NET-01 regression, made deterministic via the injected clock (NET-12). resetTimeout (30s)
     // deliberately EXCEEDS the rolling window (10s) — the production-shaped ordering the original tests
@@ -266,7 +269,8 @@ struct StandardCircuitBreakerTests {
     // A single failed half-open trial. Its windowed sample count is 1 (< threshold 2), so shouldTrip's
     // rate path cannot fire — only the half-open re-trip branch can re-open the breaker.
     await cb.recordFailure()
-    #expect(await cb.cannotProceed())  // must re-open regardless of the aged-out windowed rate (NET-01)
+    // must re-open regardless of the aged-out windowed rate (NET-01)
+    #expect(await cb.cannotProceed())
   }
 }
 

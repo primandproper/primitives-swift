@@ -278,7 +278,8 @@ struct ExponentialBackoffPolicyTests {
     let recorder = SleepRecorder()
     let policy = ExponentialBackoffPolicy(
       config: RetryConfig(
-        maxAttempts: 5, initialDelay: .milliseconds(100), maxDelay: .milliseconds(500), multiplier: 10,
+        maxAttempts: 5, initialDelay: .milliseconds(100), maxDelay: .milliseconds(500),
+        multiplier: 10,
         useJitter: false),
       sleep: { await recorder.record($0) })
 
@@ -309,7 +310,8 @@ struct ExponentialBackoffPolicyTests {
     #expect(durations.count == 19)  // 20 attempts -> 19 inter-attempt sleeps
     for delay in durations {
       #expect(delay >= .milliseconds(50))  // lower bound, hit when the random draw is 0
-      #expect(delay < .milliseconds(100))  // strict upper bound: jitter never reaches the full delay
+      // strict upper bound: jitter never reaches the full delay
+      #expect(delay < .milliseconds(100))
     }
   }
 

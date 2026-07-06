@@ -9,7 +9,8 @@ struct MultiSourceEventReporterRoutingTests {
     let mock = EventReporterMock()
     let multi = MultiSourceEventReporter(reporters: ["ios": mock])
 
-    try await multi.trackEvent(source: "ios", event: "signed_up", userID: "user123", properties: ["plan": "pro"])
+    try await multi.trackEvent(
+      source: "ios", event: "signed_up", userID: "user123", properties: ["plan": "pro"])
 
     let calls = await mock.eventOccurredCalls
     #expect(calls.count == 1)
@@ -53,7 +54,9 @@ struct MultiSourceEventReporterRoutingTests {
 
   @Test("knownSources reports the configured source names")
   func knownSources() {
-    let multi = MultiSourceEventReporter(reporters: ["ios": NoopEventReporter(), "web": NoopEventReporter()])
+    let multi = MultiSourceEventReporter(reporters: [
+      "ios": NoopEventReporter(), "web": NoopEventReporter(),
+    ])
     #expect(Set(multi.knownSources) == ["ios", "web"])
   }
 }
@@ -103,7 +106,8 @@ struct MultiSourceEventReporterConstructionTests {
     try await multi.trackEvent(source: "ios", event: "e", userID: "u")
   }
 
-  @Test("the default makeReporter uses SourceConfig.provideCollector, buffering without a network call")
+  @Test(
+    "the default makeReporter uses SourceConfig.provideCollector, buffering without a network call")
   func defaultMakeReporterBuffersWithoutNetwork() async throws {
     let multi = MultiSourceEventReporter(
       proxySources: [
