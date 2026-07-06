@@ -71,23 +71,25 @@ struct HealthCheckRegistryTests {
   @Test("registered checks run concurrently, not serially")
   func checksRunConcurrently() async {
     let registry = HealthCheckRegistry(observer: recordingObserver("test"))
-    let perCheckDelay: Duration = .milliseconds(150)
+    let tracker = ConcurrencyTracker()
     for index in 0..<5 {
       let checker = CheckerMock(name: "checker-\(index)") {
-        try await Task.sleep(for: perCheckDelay)
+        await tracker.enter()
+        // The sleep is an overlap window that keeps every check in-flight simultaneously, not an
+        // asserted deadline — so this test is immune to CI scheduling jitter, unlike a wall-clock bound.
+        try await Task.sleep(for: .milliseconds(150))
+        await tracker.leave()
       }
       await registry.register(checker)
     }
 
-    let clock = ContinuousClock()
-    let start = clock.now
     let result = await registry.checkAll()
-    let elapsed = start.duration(to: clock.now)
 
     #expect(result.status == .up)
     #expect(result.components.count == 5)
-    // Serial execution would take >= 5 * 150ms = 750ms; concurrent execution should land well under that.
-    #expect(elapsed < .milliseconds(500))
+    // Peak simultaneous in-flight checks proves concurrency directly: serial execution never exceeds a
+    // peak of 1, whereas concurrent execution drives all 5 into their sleep at once.
+    #expect(await tracker.peak == 5)
   }
 
   @Test("register accumulates checkers across multiple calls")
@@ -102,5 +104,21 @@ struct HealthCheckRegistryTests {
     // wins, matching the plain `map[string]ComponentResult` assignment in Go's aggregation loop — there's
     // no dedup by name on either side.
     #expect(result.components.count == 1)
+  }
+}
+
+/// Tracks how many checks are in-flight at once so ``checksRunConcurrently`` can assert concurrency by
+/// observed peak overlap rather than by wall-clock elapsed time (which is flaky on contended CI runners).
+private actor ConcurrencyTracker {
+  private var active = 0
+  private(set) var peak = 0
+
+  func enter() {
+    active += 1
+    peak = max(peak, active)
+  }
+
+  func leave() {
+    active -= 1
   }
 }
