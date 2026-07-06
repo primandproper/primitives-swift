@@ -57,9 +57,9 @@ public actor StandardCircuitBreaker: CircuitBreaker {
   private var openedAt: ContinuousClock.Instant?
 
   private let logger: any Logger
-  private let trippedCounter: Counter
-  private let failedCounter: Counter
-  private let resetCounter: Counter
+  private let trippedCounter: MetricCounter
+  private let failedCounter: MetricCounter
+  private let resetCounter: MetricCounter
 
   /// Creates a breaker.
   ///
