@@ -41,6 +41,7 @@ let package = Package(
     .library(name: "Uploads", targets: ["Uploads"]),
     .library(name: "HealthCheck", targets: ["HealthCheck"]),
     .library(name: "Panicking", targets: ["Panicking"]),
+    .library(name: "Search", targets: ["Search"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
@@ -370,6 +371,17 @@ let package = Package(
     .testTarget(
       name: "PanickingTests",
       dependencies: ["Panicking"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Search",
+      dependencies: ["Embeddings", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      linkerSettings: [.linkedLibrary("sqlite3")]
+    ),
+    .testTarget(
+      name: "SearchTests",
+      dependencies: ["Search", "Embeddings", "Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
   ]
