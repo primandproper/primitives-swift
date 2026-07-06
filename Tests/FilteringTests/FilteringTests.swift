@@ -46,6 +46,17 @@ struct QueryFilterTests {
     #expect(items.count == 2)
   }
 
+  @Test("queryItems clamps an over-cap limit down to maxLimit, like Go's ToValues")
+  func queryItemsClampsLimit() {
+    let over = QueryFilter(maxResponseSize: 255)  // 255 > maxLimit (250)
+    let items = Dictionary(uniqueKeysWithValues: over.queryItems().map { ($0.name, $0.value) })
+    #expect(items["limit"] == "250")
+
+    let under = QueryFilter(maxResponseSize: 25)
+    let underItems = Dictionary(uniqueKeysWithValues: under.queryItems().map { ($0.name, $0.value) })
+    #expect(underItems["limit"] == "25")
+  }
+
   @Test("date query items use RFC3339 keys straight (not crossed)")
   func queryItemsDates() {
     let when = Date(timeIntervalSince1970: 1_700_000_000)  // 2023-11-14T22:13:20Z
@@ -100,6 +111,42 @@ struct PaginationTests {
     #expect(p.totalCount == 9)
     #expect(p.maxResponseSize == 50)
     #expect(p.appliedQueryFilter == nil)
+  }
+
+  // REPO-06: Go's encoding/json decodes a bare `{}` (and missing/null fields) into a zero-value struct.
+  // Swift's synthesized decode would throw on the absent non-optional keys; the lenient init closes that.
+  @Test("Pagination decodes an empty object to Go zero values")
+  func paginationEmptyObject() throws {
+    let p = try JSONDecoder().decode(Pagination.self, from: Data("{}".utf8))
+    #expect(p == Pagination())
+    #expect(p.cursor == "")
+    #expect(p.filteredCount == 0)
+    #expect(p.maxResponseSize == 0)
+    #expect(p.appliedQueryFilter == nil)
+  }
+
+  @Test("Pagination tolerates explicit null fields, decoding them to zero values")
+  func paginationNullFields() throws {
+    let json = Data(
+      #"{"appliedQueryFilter":null,"cursor":null,"previousCursor":null,"filteredCount":null,"totalCount":null,"maxResponseSize":null}"#
+        .utf8)
+    let p = try JSONDecoder().decode(Pagination.self, from: json)
+    #expect(p == Pagination())
+  }
+
+  @Test("QueryFilteredResult decodes an empty object: empty data and zero-value pagination")
+  func filteredResultEmptyObject() throws {
+    let result = try JSONDecoder().decode(QueryFilteredResult<String>.self, from: Data("{}".utf8))
+    #expect(result.data.isEmpty)
+    #expect(result.pagination == Pagination())
+  }
+
+  @Test("QueryFilteredResult treats a null data field as an empty slice")
+  func filteredResultNullData() throws {
+    let json = Data(#"{"data":null,"cursor":"c2"}"#.utf8)
+    let result = try JSONDecoder().decode(QueryFilteredResult<String>.self, from: json)
+    #expect(result.data.isEmpty)
+    #expect(result.pagination.cursor == "c2")
   }
 
   @Test("QueryFilteredResult flattens pagination alongside data")

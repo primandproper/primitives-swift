@@ -21,7 +21,9 @@ public struct QueryFilteredResult<T: Codable & Sendable>: Codable, Sendable {
 
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    data = try container.decode([T].self, forKey: .data)
+    // Lenient like Go's `encoding/json` (REPO-06): a missing `data` key or an explicit `"data": null`
+    // decodes to an empty slice rather than throwing, so a bare `{}` envelope round-trips.
+    data = try container.decodeIfPresent([T].self, forKey: .data) ?? []
     // Pagination's fields are flattened to the same level, so decode it from the same decoder.
     pagination = try Pagination(from: decoder)
   }

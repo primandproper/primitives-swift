@@ -31,9 +31,6 @@ public enum LLMError: Error, Equatable, Sendable {
   case provider(status: Int, message: String)
   /// A 2xx response whose body couldn't be decoded into the expected shape. Carries a short reason.
   case malformedResponse(String)
-  /// The configured provider string is recognized but unavailable on this platform. Kept for symmetry
-  /// with the rest of the port's salsa20-treated factories, though both real providers here are live.
-  case unsupportedProvider(String)
 
   public var description: String {
     switch self {
@@ -47,7 +44,6 @@ public enum LLMError: Error, Equatable, Sendable {
     case .invalidRequest(let message): return "invalid llm request: \(message)"
     case .provider(let status, let message): return "llm provider error (\(status)): \(message)"
     case .malformedResponse(let reason): return "malformed llm response: \(reason)"
-    case .unsupportedProvider(let provider): return "unsupported llm provider: \(provider)"
     }
   }
 }
