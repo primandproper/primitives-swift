@@ -149,9 +149,9 @@ private struct CapturingLogger: Logger {
   func debug(_ message: String) {}
   func error(_ whatWasHappening: String, _ error: Error) {}
   func withName(_ name: String) -> any Logger { self }
-  func withValue(_ key: String, _ value: Any) -> any Logger {
+  func withValue(_ key: String, _ value: AttributeValue) -> any Logger {
     var next = fields
-    next[key] = String(describing: value)
+    next[key] = value.rendered
     return CapturingLogger(fields: next)
   }
 }

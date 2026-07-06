@@ -108,32 +108,32 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
 
   // MARK: Operation
 
-  private func record(_ key: String, _ value: Any, _ pillar: Pillar) {
+  private func record(_ key: String, _ value: AttributeValue, _ pillar: Pillar) {
     let obs = Observation(
-      key: key, value: String(describing: value), pillar: pillar, seq: nextSeq())
+      key: key, value: value.rendered, pillar: pillar, seq: nextSeq())
     state.withLock { $0.observations.append(obs) }
   }
 
   @discardableResult
-  public func set(_ key: String, _ value: Any) -> any Operation {
+  public func set(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .both)
     return self
   }
 
   @discardableResult
-  public func setValues(_ values: [String: Any]) -> any Operation {
+  public func setValues(_ values: [String: AttributeValue]) -> any Operation {
     for (k, v) in values.sorted(by: { $0.key < $1.key }) { record(k, v, .both) }
     return self
   }
 
   @discardableResult
-  public func spanOnly(_ key: String, _ value: Any) -> any Operation {
+  public func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .span)
     return self
   }
 
   @discardableResult
-  public func logOnly(_ key: String, _ value: Any) -> any Operation {
+  public func logOnly(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .log)
     return self
   }

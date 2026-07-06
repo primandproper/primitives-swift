@@ -13,22 +13,27 @@ public protocol Logger: Sendable {
   func error(_ whatWasHappening: String, _ error: Error)
 
   func withName(_ name: String) -> any Logger
-  func withValue(_ key: String, _ value: Any) -> any Logger
-  func withValues(_ values: [String: Any]) -> any Logger
+  func withValue(_ key: String, _ value: AttributeValue) -> any Logger
+  func withValues(_ values: [String: AttributeValue]) -> any Logger
   func withError(_ error: Error) -> any Logger
   func withSpan(_ span: any Span) -> any Logger
 }
 
 extension Logger {
+  /// Sugar over ``withValue(_:_:)`` accepting any ``AttributeRepresentable``.
+  public func withValue(_ key: String, _ value: some AttributeRepresentable) -> any Logger {
+    withValue(key, value.attributeValue)
+  }
+
   /// Attaches `span.id`/`trace.id` from a span context. Shared by every conformer.
   public func withSpan(_ span: any Span) -> any Logger {
     withValues([
-      Keys.spanID: span.context.spanID,
-      Keys.traceID: span.context.traceID,
+      Keys.spanID: .string(span.context.spanID),
+      Keys.traceID: .string(span.context.traceID),
     ])
   }
 
-  public func withValues(_ values: [String: Any]) -> any Logger {
+  public func withValues(_ values: [String: AttributeValue]) -> any Logger {
     values.reduce(self as any Logger) { $0.withValue($1.key, $1.value) }
   }
 
@@ -83,9 +88,9 @@ public struct OSLogLogger: Logger {
     OSLogLogger(backing: backing, name: name, fields: fields)
   }
 
-  public func withValue(_ key: String, _ value: Any) -> any Logger {
+  public func withValue(_ key: String, _ value: AttributeValue) -> any Logger {
     var next = fields
-    next[key] = String(describing: value)
+    next[key] = value.rendered
     return OSLogLogger(backing: backing, name: name, fields: next)
   }
 
@@ -137,9 +142,9 @@ public struct SwiftLogLogger: Logger {
     return SwiftLogLogger(backing: copy)
   }
 
-  public func withValue(_ key: String, _ value: Any) -> any Logger {
+  public func withValue(_ key: String, _ value: AttributeValue) -> any Logger {
     var copy = backing
-    copy[metadataKey: key] = "\(String(describing: value))"
+    copy[metadataKey: key] = "\(value.rendered)"
     return SwiftLogLogger(backing: copy)
   }
 }
@@ -153,8 +158,8 @@ public struct NoopLogger: Logger {
   public func debug(_ message: String) {}
   public func error(_ whatWasHappening: String, _ error: Error) {}
   public func withName(_ name: String) -> any Logger { self }
-  public func withValue(_ key: String, _ value: Any) -> any Logger { self }
-  public func withValues(_ values: [String: Any]) -> any Logger { self }
+  public func withValue(_ key: String, _ value: AttributeValue) -> any Logger { self }
+  public func withValues(_ values: [String: AttributeValue]) -> any Logger { self }
   public func withError(_ error: Error) -> any Logger { self }
   public func withSpan(_ span: any Span) -> any Logger { self }
 }

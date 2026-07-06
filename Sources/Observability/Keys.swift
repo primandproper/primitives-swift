@@ -8,6 +8,9 @@ public enum Keys {
 
   // Errors
   public static let error = "error"
+  // OTel-semconv exception attributes recorded by `Span.recordError`.
+  public static let exceptionType = "exception.type"
+  public static let exceptionMessage = "exception.message"
 
   // Service / identity
   public static let serviceName = "service_name"

@@ -12,9 +12,17 @@ public protocol Tracer: Sendable {
 public protocol Span: Sendable {
   var name: String { get }
   var context: SpanContext { get }
-  func attach(_ key: String, _ value: Any)
+  func attach(_ key: String, _ value: AttributeValue)
   func recordError(_ description: String, _ error: Error)
   func end()
+}
+
+extension Span {
+  /// Sugar over ``attach(_:_:)`` accepting any ``AttributeRepresentable`` so scalar call sites
+  /// (`span.attach("count", n)`) don't need an explicit `.int`/`.string`.
+  public func attach(_ key: String, _ value: some AttributeRepresentable) {
+    attach(key, value.attributeValue)
+  }
 }
 
 // MARK: - Signpost (default iOS backend)
@@ -63,16 +71,20 @@ public final class SignpostSpan: Span, @unchecked Sendable {
       initialState: IntervalState(interval: interval, ended: false))
   }
 
-  public func attach(_ key: String, _ value: Any) {
+  public func attach(_ key: String, _ value: AttributeValue) {
     signposter.emitEvent(
       "attr", id: signpostID,
-      "\(key, privacy: .public)=\(String(describing: value), privacy: .public)")
+      "\(key, privacy: .public)=\(value.rendered, privacy: .private)")
   }
 
   public func recordError(_ description: String, _ error: Error) {
+    // Record the error as OTel-semconv `exception.*` attributes so an exporter can surface a typed
+    // exception, then emit the human-readable signpost event for Instruments.
+    attach(Keys.exceptionType, String(describing: type(of: error)))
+    attach(Keys.exceptionMessage, String(describing: error))
     signposter.emitEvent(
       "error", id: signpostID,
-      "\(description, privacy: .public): \(String(describing: error), privacy: .public)")
+      "\(description, privacy: .public): \(String(describing: error), privacy: .private)")
   }
 
   public func end() {
@@ -101,7 +113,7 @@ public final class NoopSpan: Span {
     self.name = name
     self.context = context
   }
-  public func attach(_ key: String, _ value: Any) {}
+  public func attach(_ key: String, _ value: AttributeValue) {}
   public func recordError(_ description: String, _ error: Error) {}
   public func end() {}
 }

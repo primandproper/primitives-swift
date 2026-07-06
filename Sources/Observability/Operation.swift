@@ -21,12 +21,12 @@ public struct ObservabilityError: Error, CustomStringConvertible {
 /// (span-enriched) logger, so a single call lands in your traces and your logs at once.
 public protocol Operation: AnyObject, Sendable {
   /// Record on both span and logger.
-  @discardableResult func set(_ key: String, _ value: Any) -> any Operation
-  @discardableResult func setValues(_ values: [String: Any]) -> any Operation
+  @discardableResult func set(_ key: String, _ value: AttributeValue) -> any Operation
+  @discardableResult func setValues(_ values: [String: AttributeValue]) -> any Operation
   /// Record on the span only.
-  @discardableResult func spanOnly(_ key: String, _ value: Any) -> any Operation
+  @discardableResult func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation
   /// Record on the logger only.
-  @discardableResult func logOnly(_ key: String, _ value: Any) -> any Operation
+  @discardableResult func logOnly(_ key: String, _ value: AttributeValue) -> any Operation
 
   var logger: any Logger { get }
   var span: any Span { get }
@@ -39,6 +39,20 @@ public protocol Operation: AnyObject, Sendable {
 
   /// Ends the underlying span. Called automatically by the closure form of `operation`.
   func end()
+}
+
+extension Operation {
+  /// Scalar sugar over the `AttributeValue` requirements so `op.set(Keys.responseStatus, code)`
+  /// (an `Int`) and `op.set("name", "abc")` (a `String` literal) work without an explicit case.
+  @discardableResult public func set(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+    set(key, value.attributeValue)
+  }
+  @discardableResult public func spanOnly(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+    spanOnly(key, value.attributeValue)
+  }
+  @discardableResult public func logOnly(_ key: String, _ value: some AttributeRepresentable) -> any Operation {
+    logOnly(key, value.attributeValue)
+  }
 }
 
 /// Production operation. Holds the span and a logger that grows as values are set; the mutable logger
@@ -59,36 +73,33 @@ public final class LiveOperation: Operation, @unchecked Sendable {
   public var logger: any Logger { state.withLock { $0.logger } }
 
   @discardableResult
-  public func set(_ key: String, _ value: Any) -> any Operation {
+  public func set(_ key: String, _ value: AttributeValue) -> any Operation {
     span.attach(key, value)
-    // Stringify first so the non-Sendable `value` never crosses into the lock's @Sendable closure,
-    // then read-modify-write under a single acquisition — otherwise concurrent sets that each read
-    // the base logger before either stores would silently drop one another's keys.
-    let stringified = String(describing: value)
-    state.withLock { $0.logger = $0.logger.withValue(key, stringified) }
+    // `AttributeValue` is `Sendable`, so it crosses into the lock's `@Sendable` closure directly and
+    // the read-modify-write happens under a single acquisition — concurrent sets can no longer read
+    // the base logger before either stores and silently drop one another's keys (the OBS-01 race).
+    state.withLock { $0.logger = $0.logger.withValue(key, value) }
     return self
   }
 
   @discardableResult
-  public func setValues(_ values: [String: Any]) -> any Operation {
+  public func setValues(_ values: [String: AttributeValue]) -> any Operation {
     for (k, v) in values { span.attach(k, v) }
-    let stringified = values.mapValues { String(describing: $0) }
     state.withLock {
-      for (k, v) in stringified { $0.logger = $0.logger.withValue(k, v) }
+      for (k, v) in values { $0.logger = $0.logger.withValue(k, v) }
     }
     return self
   }
 
   @discardableResult
-  public func spanOnly(_ key: String, _ value: Any) -> any Operation {
+  public func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation {
     span.attach(key, value)
     return self
   }
 
   @discardableResult
-  public func logOnly(_ key: String, _ value: Any) -> any Operation {
-    let stringified = String(describing: value)
-    state.withLock { $0.logger = $0.logger.withValue(key, stringified) }
+  public func logOnly(_ key: String, _ value: AttributeValue) -> any Operation {
+    state.withLock { $0.logger = $0.logger.withValue(key, value) }
     return self
   }
 
