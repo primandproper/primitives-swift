@@ -237,64 +237,85 @@ Conventions for agents working this list:
 
 ## Wave 4 — Repo-wide conventions, hygiene, and test debt
 
-- [ ] **REPO-01 (P1)** CI — there is no `.github/` at all (platform-go runs 7 workflows). Add a
+**COMPLETE (2026-07-06).** All 12 items landed via a two-round worktree fleet; tree is
+`swift format`-clean and 895 tests green (was 736 at Wave-4 start). Residual follow-ups recorded
+inline below: DurationWire full consolidation (REPO-12) and the RFC3339Nano/securecookie interop
+caveats (REPO-07).
+
+- [x] **REPO-01 (P1)** CI — there is no `.github/` at all (platform-go runs 7 workflows). Add a
   workflow running `make build`, `make test`, `make lint` on macOS, plus `make build-ios` if
   feasible. Blocks REPO-02/03(publish).
-- [ ] **REPO-02 (P2)** Coverage — add `make coverage` (`swift test --enable-code-coverage` +
+- [x] **REPO-02 (P2)** Coverage — add `make coverage` (`swift test --enable-code-coverage` +
   `llvm-cov export -format=lcov`) and codecov wiring once CI exists.
-- [ ] **REPO-03 (P2)** Pin formatting — commit a `.swift-format` config (current style: 2-space
+- [x] **REPO-03 (P2)** Pin formatting — commit a `.swift-format` config (current style: 2-space
   indent) so `make format`/`make lint` don't drift across Xcode versions. Optional: DocC
   `make docs` target.
-- [ ] **REPO-04 (P1)** README overhaul + port-tracking doc — README presents the package as
+- [x] **REPO-04 (P1)** README overhaul + port-tracking doc — README presents the package as
   observability-only (Status table lists 5 rows; Installation shows one product) while 24 products
   ship. Add a per-module status table and generalize the install snippet. Create a
   `PORT_PROGRESS.md` modeled on platform-rs's (tiered status: deep-port / pure-logic-done /
   real-local-backend / deferred-cloud, with "what's real" per module); record deliberate omissions
   there (PASETO, zstd/s2, `FromParams`, streaming LLM, etc.).
-- [ ] **REPO-05 (P1)** Noop/Mock sweep — Go's rule: every service package ships noop + mock. Swift
+- [x] **REPO-05 (P1)** Noop/Mock sweep — Go's rule: every service package ships noop + mock. Swift
   follows it in Analytics/FeatureFlags/LLM but not Cookies (no protocol seam at all — extract
   `CookieManaging` + Noop + Mock), HTTPClient, EventStream, Retry, CircuitBreaking (promote the
   private test fakes), Cryptography/Authentication (no way to stub `EncryptorDecryptor`, TOTP, JWT
   parsing, `ClientEncoder`), QRCodes (Noop only, no recording mock). Also SVC note: the actor
   mocks' `public var` handlers can't actually be set cross-actor in Swift 6 — add `setHandler`
   mutators or make them `let`.
-- [ ] **REPO-06 (P2)** Lenient-decode sweep — enforce the "missing keys decode to Go zero values"
+- [x] **REPO-06 (P2)** Lenient-decode sweep — enforce the "missing keys decode to Go zero values"
   contract everywhere: `Pagination`/`QueryFilteredResult` (`"data": null` throws today),
   `ObservabilityConfig` (OBS-04), FeatureFlags `PostHogConfig` (SVC-03). Add `{}`-decode tests as
   the convention.
-- [ ] **REPO-07 (P1)** Cross-language interop fixtures — the port's compatibility claims are mostly
+- [x] **REPO-07 (P1)** Cross-language interop fixtures — the port's compatibility claims are mostly
   untested against Go-produced bytes. Capture once from platform-go and pin: AES-GCM ciphertext,
   a securecookie-encoded value, a Go-minted xid (two already sit in the JWT test token's
   `jti`/`sub`), RFC3339Nano variable-precision timestamps for Filtering. JWT already has a Go
   token fixture — extend the pattern.
-- [ ] **REPO-08 (P1)** Observability test debt — every existing test exercises the test doubles;
+  DONE: all four fixtures captured from real Go bytes (stdlib AES-GCM, gorilla/securecookie v1.1.2,
+  rs/xid v1.6.0, `time.RFC3339Nano`) and pinned as literals with reproduction recipes. **No hard
+  mismatch.** Two caveats now pinned by assertion, not silent: (1) Filtering's `RFC3339` parses via
+  Foundation `ISO8601DateFormatter`, which resolves fractional seconds only to **millisecond**
+  precision — µs/ns Go timestamps truncate (~0.456 ms). Acceptable for client filter bounds; matches
+  the existing warning in `RFC3339.swift`. (2) securecookie interop only covers the JSON-serializer /
+  no-block-key subset the port reproduces; Go's default gob+AES-CTR path is deliberately not ported,
+  so a Go peer must select the JSON serializer to interop. Also: `Identifiers` has no string→components
+  xid *decoder* (encode+validate only) — interop check re-encodes Go's raw bytes; extend if a decoder lands.
+- [x] **REPO-08 (P1)** Observability test debt — every existing test exercises the test doubles;
   zero coverage of `LiveObserver`/`LiveOperation` dual-write routing, `OSLogLogger.render`,
   signpost end-idempotence, or `IDGen` format. No concurrency tests: task-local parenting across
   `withTaskGroup`/`async let`, sibling spans, concurrent `op.set` (regression for OBS-01), partial
   config decode (OBS-04). Add a mock Span/Logger pair and the concurrency suite.
-- [ ] **REPO-09 (P2)** Networking test debt — deterministic half-open re-trip test with
+- [x] **REPO-09 (P2)** Networking test debt — deterministic half-open re-trip test with
   `resetTimeout > window` (regression for NET-01; needs NET-12 clock), `RollingWindow` unit tests,
   backoff delay progression/cap/jitter bounds (current tests only count attempts), mid-stream SSE
   transport error, consumer-abandonment resource release (NET-04), HTTPClient metrics emission,
   cancellation-aware `FakeWebSocketConnection`.
-- [ ] **REPO-10 (P2)** Crypto/auth test debt — full RFC 6238 Appendix B (18 vectors, 8 digits, all
+- [x] **REPO-10 (P2)** Crypto/auth test debt — full RFC 6238 Appendix B (18 vectors, 8 digits, all
   three algorithms; currently 6-digit spot checks), explicit `alg:"none"`/empty-signature JWT test,
   strict base64url rejection tests (pair with CRY-21), garbage + empty-input decompress for all
   four algorithms (guards an infinite-loop hang path in `AppleCompressor.stream`), Noop/Mock tests
   for LLM doubles, LLM error-classification fixture matrix (404, 400 routing, non-JSON body,
   URLError), StoreKit logic tests behind a `StoreKitClient` seam (deps: SVC-01/02).
-- [ ] **REPO-11 (P2)** JWT/base64url strictness (grouped: CRY-21) — `Base64URLNoPad.decode` and
+- [x] **REPO-11 (P2)** JWT/base64url strictness (grouped: CRY-21) — `Base64URLNoPad.decode` and
   Cryptography's `Base64URL` accept `+`/`/`/embedded `=` that RFC 7515 §2 / Go reject; wrong-typed
   `exp`/`nbf` treated as absent instead of malformed; non-string `aud` elements silently dropped;
   `crit` header not rejected. Optional parity-plus: `leeway` parameter for device clock drift.
   Also store the AES-GCM master key as `SymmetricKey` (best-effort zeroization) instead of `Data`.
-- [ ] **REPO-12 (P2)** Small-module polish — Filtering: enforce `maxLimit` in `queryItems()`,
+- [x] **REPO-12 (P2)** Small-module polish — Filtering: enforce `maxLimit` in `queryItems()`,
   delete stale "crossed CodingKeys" doc sentences, document dropped `FromParams`/`ToPagination`.
   QRCodes: fix the false linkerSettings doc claim. LLM: fix the garbled "salsa20-treated" doc
   sentence and the dead `unsupportedProvider` case; hand-write `encode(to:)` if the byte-for-byte
   re-encode claim stays. Package.swift: drop the empty `ObservabilityOTel` *product* until OBS-20
   lands (or give it a placeholder test target). Consider a shared `DurationWire` helper for the
   four copies of `Duration.wholeNanoseconds`.
+  DONE except one deferral: Filtering `maxLimit`/doc, QRCodes doc + recording Mock, LLM doc +
+  dead-case removal (byte-for-byte `encode(to:)` was already hand-written — verified, left as-is),
+  and the ObservabilityOTel product drop all landed. **DurationWire is PARTIAL:** the helper now
+  exists (`Sources/LLM/DurationWire.swift`) and LLM uses it, but 5 sibling `internal` copies remain
+  in HTTPClient/Retry/EventStream/FeatureFlags/Cookies. True collapse needs a shared low-level target
+  they can all depend on (Package.swift wiring) — deferred as a standalone follow-up, not worth a new
+  target for a one-liner today.
 
 ---
 
