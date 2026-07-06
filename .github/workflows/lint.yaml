@@ -26,11 +26,9 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # NOTE: `make lint` runs `swift format lint --strict` against the pinned
-      # `.swift-format` config. The existing tree carries pre-existing formatting
-      # debt (a `make format` sweep is tracked separately under REPO-03), so this
-      # job is reported but non-blocking until that sweep lands. Flip
-      # `continue-on-error` to `false` (or delete it) once the tree is clean.
+      # `make lint` runs `swift format lint --strict` against the pinned
+      # `.swift-format` config. The tree was swept clean under REPO-03, so this
+      # job is blocking: any new formatting drift fails CI. Run `make format`
+      # locally to fix.
       - name: Lint (swift-format)
-        continue-on-error: true
         run: make lint
