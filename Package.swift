@@ -350,7 +350,9 @@ let package = Package(
     ),
     .testTarget(
       name: "EmbeddingsTests",
-      dependencies: ["Embeddings", "HTTPClient", "Observability", "CircuitBreaking", "DurationWire"],
+      dependencies: [
+        "Embeddings", "HTTPClient", "Observability", "CircuitBreaking", "DurationWire",
+      ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
