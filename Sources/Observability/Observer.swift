@@ -38,7 +38,10 @@ public struct LiveObserver: Observer {
   public init(name: String, logger: any Logger, tracer: any Tracer) {
     self.name = name
     self.logger = logger.withName(name)
-    self.tracer = tracer
+    // Scope the tracer to this component so its spans are grouped by component in Instruments (the
+    // component rides the signpost category — see ``SignpostTracer/named(_:)``). No-op for backends
+    // that can't carry it.
+    self.tracer = tracer.named(name)
   }
 
   public func operation<R>(name: String, _ body: (any Operation) async throws -> R) async rethrows

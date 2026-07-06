@@ -17,6 +17,12 @@ public struct Pillars: Sendable {
   public static var noop: Pillars {
     Pillars(logger: NoopLogger(), tracer: NoopTracer(), metrics: NoopMetricsProvider())
   }
+
+  /// Flush-and-stop hook, mirroring ``DiagnosticsProvider/shutdown()``. The native pillars (OSLog,
+  /// signposts, swift-metrics) hold nothing that needs draining, so this is a no-op today. It exists
+  /// so a future buffered exporter (the `ObservabilityOTel` OTLP path) can flush pending spans/metrics
+  /// on teardown without a breaking API change. Safe to `await` on any `Pillars`, including `.noop`.
+  public func shutdown() async {}
 }
 
 /// Root configuration, ported from platform-go's `observability.Config`. Unlike Go's `env:`-tagged
@@ -136,21 +142,27 @@ public struct TracingConfig: Codable, Sendable {
 
   public var provider: Provider
   public var subsystem: String?
+  /// Fraction of traces to sample, in `[0, 1]`, ported from platform-go's `SpanCollectionProbability`
+  /// (OTel `TraceIDRatioBased`). `1.0` samples everything. The native signpost backend ignores it (it
+  /// always records); it's carried here so a future OTLP exporter can configure its sampler.
+  public var sampleRatio: Double
 
-  public init(provider: Provider = .signpost, subsystem: String? = nil) {
+  public init(provider: Provider = .signpost, subsystem: String? = nil, sampleRatio: Double = 1.0) {
     self.provider = provider
     self.subsystem = subsystem
+    self.sampleRatio = sampleRatio
   }
 
   private enum CodingKeys: String, CodingKey {
-    case provider, subsystem
+    case provider, subsystem, sampleRatio
   }
 
-  /// Lenient decode: missing keys fall back to defaults.
+  /// Lenient decode: missing keys fall back to defaults (so `{}` yields `sampleRatio == 1.0`).
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .signpost
     self.subsystem = try c.decodeIfPresent(String.self, forKey: .subsystem)
+    self.sampleRatio = try c.decodeIfPresent(Double.self, forKey: .sampleRatio) ?? 1.0
   }
 }
 

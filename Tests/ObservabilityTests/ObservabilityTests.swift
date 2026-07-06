@@ -123,6 +123,124 @@ struct ConfigTests {
   }
 }
 
+// MARK: - OBS-11: Pillars shutdown/flush seam
+
+@Suite("Pillars shutdown")
+struct PillarsShutdownTests {
+
+  @Test("shutdown() can be awaited on the noop pillars")
+  func noopShutdownAwaitable() async {
+    await Pillars.noop.shutdown()
+    #expect(Bool(true))  // reached: shutdown returned without hanging or trapping
+  }
+
+  @Test("shutdown() can be awaited on a live, bootstrapped pillars")
+  func liveShutdownAwaitable() async {
+    let pillars = ObservabilityConfig.default.bootstrap()
+    await pillars.shutdown()
+    #expect(Bool(true))
+  }
+}
+
+// MARK: - OBS-12: Span protocol gaps for the OTel adapter
+
+@Suite("Span kind / status / naming")
+struct SpanSeamTests {
+
+  @Test("setStatus is callable on a live signpost span and the noop span")
+  func setStatusCallable() {
+    let signpost = SignpostTracer().startSpan("op")
+    signpost.setStatus(.ok)
+    signpost.setStatus(.error)
+    signpost.setStatus(.unset)
+    signpost.end()
+
+    let noop = NoopTracer().startSpan("op")
+    noop.setStatus(.error)
+    noop.end()
+    #expect(Bool(true))  // no crash on either backend
+  }
+
+  @Test("bare startSpan(_:) still works and defaults kind to .internal")
+  func bareStartSpanDefaults() {
+    let span = SignpostTracer().startSpan("op") as! SignpostSpan
+    #expect(span.name == "op")
+    #expect(span.kind == .internal)
+    span.end()
+  }
+
+  @Test("startSpan with kind and initial attributes seeds the span")
+  func startSpanWithKindAndAttributes() {
+    let span =
+      SignpostTracer()
+      .startSpan("op", kind: .server, attributes: ["http.method": .string("GET"), "count": .int(3)])
+      as! SignpostSpan
+    #expect(span.name == "op")
+    #expect(span.kind == .server)
+    // Attaching seeded attributes must not crash; values land on the signpost event stream.
+    span.end()
+  }
+
+  @Test("SpanKind covers the OTel roles and encodes to its lowercase name")
+  func spanKindRawValues() throws {
+    #expect(SpanKind.internal.rawValue == "internal")
+    #expect(SpanKind.client.rawValue == "client")
+    #expect(SpanKind.server.rawValue == "server")
+    #expect(SpanKind.producer.rawValue == "producer")
+    #expect(SpanKind.consumer.rawValue == "consumer")
+  }
+
+  @Test("per-component tracer naming rides the signpost category")
+  func perComponentNaming() {
+    let base = SignpostTracer()
+    #expect(base.category == "spans")
+
+    let named = base.named("ProfileService") as! SignpostTracer
+    #expect(named.category == "spans.ProfileService")
+
+    // A LiveObserver wires the component name into its tracer via `named`.
+    let observer = makeObserver("Checkout", ObservabilityConfig.default.bootstrap()) as! LiveObserver
+    #expect((observer.tracer as! SignpostTracer).category == "spans.Checkout")
+
+    // The noop tracer ignores naming (default seam), returning an equivalent tracer.
+    #expect(NoopTracer().named("x") is NoopTracer)
+  }
+}
+
+// MARK: - OBS-12: TracingConfig sampleRatio
+
+@Suite("TracingConfig sampleRatio")
+struct TracingSampleRatioTests {
+
+  @Test("empty object decodes sampleRatio to the 1.0 default")
+  func emptyObjectDefaultsRatio() throws {
+    let cfg = try JSONDecoder().decode(TracingConfig.self, from: Data("{}".utf8))
+    #expect(cfg.sampleRatio == 1.0)
+    #expect(cfg.provider == .signpost)
+  }
+
+  @Test("present sampleRatio is decoded")
+  func presentRatioDecoded() throws {
+    let cfg = try JSONDecoder().decode(
+      TracingConfig.self, from: Data(#"{"sampleRatio":0.25}"#.utf8))
+    #expect(cfg.sampleRatio == 0.25)
+  }
+
+  @Test("sampleRatio round-trips through the whole ObservabilityConfig")
+  func ratioRoundTrips() throws {
+    let original = ObservabilityConfig(tracing: .init(sampleRatio: 0.5))
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(ObservabilityConfig.self, from: data)
+    #expect(decoded.tracing.sampleRatio == 0.5)
+  }
+
+  @Test("empty ObservabilityConfig object leaves tracing.sampleRatio at 1.0")
+  func emptyRootDefaultsRatio() throws {
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data("{}".utf8))
+    #expect(cfg.tracing.sampleRatio == 1.0)
+  }
+}
+
 @Suite("Logger")
 struct LoggerTests {
 

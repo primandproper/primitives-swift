@@ -75,7 +75,9 @@ final class ProfileService {
 
 What you get for free:
 
-- An `OSSignposter` interval named after the function, visible as a span in **Instruments**.
+- An `OSSignposter` interval (statically named `"span"`, since signpost interval names must be a
+  `StaticString`) carrying the function name, span kind, and ids in its message and grouped by
+  component via the signpost category — visible as a span in **Instruments**.
 - Log lines in **Console.app** carrying `span.id` / `trace.id`, so logs and traces correlate.
 - Nested `operation` calls link parent → child automatically (see [Context propagation](#context-propagation)).
 
