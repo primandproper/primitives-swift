@@ -18,6 +18,11 @@ public enum EncoderError: Error, Equatable, Sendable {
   /// The requested ``ContentType`` is recognized but has no first-party codec on this platform (every
   /// case except ``ContentType/json``). Thrown by ``ContentType/makeClientEncoder()``.
   case unsupportedContentType(ContentType)
+
+  /// The codec is deliberately disabled and cannot decode: thrown by ``NoopClientEncoder/decode(_:from:)``,
+  /// which has no value to hand back (a codec-selection failure, in the same family as
+  /// ``unsupportedContentType(_:)`` — not a wrapped Foundation decode error).
+  case codecDisabled
 }
 
 extension EncoderError: LocalizedError {
@@ -25,6 +30,8 @@ extension EncoderError: LocalizedError {
     switch self {
     case .unsupportedContentType(let contentType):
       return "unsupported content type: \(contentType.rawValue)"
+    case .codecDisabled:
+      return "codec is disabled and cannot decode"
     }
   }
 }
