@@ -49,7 +49,9 @@ public struct EventStreamConfig: Codable, Sendable, Equatable {
       return SSEEventStreamConnector(session: session, observer: observer)
     case .websocket:
       let connector = WebSocketEventStreamConnector(session: session, observer: observer)
-      return AnyEventStreamConnector { url in try await connector.connect(to: url) }
+      return AnyEventStreamConnector { url, headers in
+        try await connector.connect(to: url, headers: headers)
+      }
     }
   }
 

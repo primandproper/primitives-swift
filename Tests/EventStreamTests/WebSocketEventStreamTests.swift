@@ -1,6 +1,7 @@
 import Foundation
 import Observability
 import Testing
+import os
 
 @testable import EventStream
 
@@ -156,5 +157,43 @@ struct WebSocketEventStreamTests {
       try await Task.sleep(for: .milliseconds(5))
     }
     #expect(connection.cancelledWith == .goingAway)
+  }
+}
+
+@Suite("WebSocketEventStreamConnector")
+struct WebSocketEventStreamConnectorTests {
+  @Test("custom headers are set on the request used to build the connection")
+  func customHeadersReachRequest() async throws {
+    let captured = OSAllocatedUnfairLock<URLRequest?>(initialState: nil)
+    let connector = WebSocketEventStreamConnector(observer: recordingObserver("test")) { request in
+      captured.withLock { $0 = request }
+      return FakeWebSocketConnection()
+    }
+
+    let stream = try await connector.connect(
+      to: URL(string: "wss://example.test/events")!,
+      headers: ["Authorization": "Bearer secret-token", "X-Custom": "on"])
+    defer { Task { await stream.close() } }
+
+    let request = try #require(captured.withLock { $0 })
+    #expect(request.url == URL(string: "wss://example.test/events")!)
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer secret-token")
+    #expect(request.value(forHTTPHeaderField: "X-Custom") == "on")
+  }
+
+  @Test("connect without headers still builds a request for the URL")
+  func noHeadersStillBuildsRequest() async throws {
+    let captured = OSAllocatedUnfairLock<URLRequest?>(initialState: nil)
+    let connector = WebSocketEventStreamConnector(observer: recordingObserver("test")) { request in
+      captured.withLock { $0 = request }
+      return FakeWebSocketConnection()
+    }
+
+    let stream = try await connector.connect(to: URL(string: "wss://example.test/events")!)
+    defer { Task { await stream.close() } }
+
+    let request = try #require(captured.withLock { $0 })
+    #expect(request.url == URL(string: "wss://example.test/events")!)
+    #expect(request.allHTTPHeaderFields?.isEmpty ?? true)
   }
 }

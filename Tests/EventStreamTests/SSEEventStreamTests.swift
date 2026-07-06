@@ -133,7 +133,7 @@ struct SSEEventStreamConnectorTests {
 
     let connector = SSEEventStreamConnector(
       session: streamingStubbedSession(), observer: recordingObserver("test"))
-    let stream = try await connector.connect(to: streamingStubbedURL(token: token))
+    let stream = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     defer { Task { await stream.close() } }
 
     var received: [Event] = []
@@ -160,7 +160,7 @@ struct SSEEventStreamConnectorTests {
 
     let connector = SSEEventStreamConnector(
       session: streamingStubbedSession(), observer: recordingObserver("test"))
-    let stream = try await connector.connect(to: streamingStubbedURL(token: token))
+    let stream = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     defer { Task { await stream.close() } }
 
     var iterator = stream.events.makeAsyncIterator()
@@ -182,8 +182,38 @@ struct SSEEventStreamConnectorTests {
       session: streamingStubbedSession(), observer: recordingObserver("test"))
 
     await #expect(throws: (any Error).self) {
-      _ = try await connector.connect(to: streamingStubbedURL(token: token))
+      _ = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     }
+  }
+
+  @Test("custom headers reach the outbound request, and Accept is not clobbered")
+  func customHeadersReachRequestWithoutClobberingAccept() async throws {
+    let token = UUID().uuidString
+    StreamingStubURLProtocol.register(
+      token, .init(chunks: [(delay: .zero, data: Data("event: ok\ndata: {}\n\n".utf8))]))
+    defer { StreamingStubURLProtocol.unregister(token) }
+
+    let connector = SSEEventStreamConnector(
+      session: streamingStubbedSession(), observer: recordingObserver("test"))
+    // A caller-supplied Authorization rides along; a caller-supplied Accept must lose to the SSE
+    // content-type the stream depends on. (`stubRoutingHeaders` also proves the token header — the
+    // routing itself — arrived, since a missing header would 400 before any stream is returned.)
+    let stream = try await connector.connect(
+      to: streamingStubbedURL(),
+      headers: stubRoutingHeaders(token: token).merging(
+        ["Authorization": "Bearer secret-token", "Accept": "application/json"]
+      ) { _, new in new })
+    defer { Task { await stream.close() } }
+
+    // Drain so `startLoading` has definitely recorded the request.
+    for try await _ in stream.events {}
+
+    let received = try #require(StreamingStubURLProtocol.receivedHeaders(for: token))
+    func header(_ name: String) -> String? {
+      received.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+    #expect(header("Authorization") == "Bearer secret-token")
+    #expect(header("Accept") == "text/event-stream")
   }
 
   @Test("a non-2xx response throws connectionFailed instead of returning a stream")
@@ -196,7 +226,7 @@ struct SSEEventStreamConnectorTests {
       session: streamingStubbedSession(), observer: recordingObserver("test"))
 
     await #expect(throws: EventStreamError.connectionFailed(status: 503)) {
-      _ = try await connector.connect(to: streamingStubbedURL(token: token))
+      _ = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     }
   }
 }

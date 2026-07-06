@@ -106,19 +106,37 @@ public actor WebSocketEventStream: BidirectionalEventStream {
 
 /// Connects to a WebSocket endpoint, the client analogue of platform-go's `websocket.NewUpgrader`.
 public struct WebSocketEventStreamConnector: BidirectionalEventStreamConnector {
-  private let session: URLSession
   private let observer: any Observer
+  /// Builds the underlying connection from the fully-formed request. Defaults to
+  /// `session.webSocketTask(with:)`; a test injects a factory that records the request and returns a
+  /// fake ``WebSocketConnection`` (there is no `URLProtocol` seam for the WebSocket transport).
+  private let makeConnection: @Sendable (URLRequest) -> any WebSocketConnection
 
   public init(session: URLSession, observer: any Observer) {
-    self.session = session
     self.observer = observer
+    self.makeConnection = { request in session.webSocketTask(with: request) }
   }
 
-  public func connect(to url: URL) async throws -> any BidirectionalEventStream {
+  /// Test seam: inject the connection factory directly to observe the request custom headers land on.
+  init(
+    observer: any Observer,
+    makeConnection: @escaping @Sendable (URLRequest) -> any WebSocketConnection
+  ) {
+    self.observer = observer
+    self.makeConnection = makeConnection
+  }
+
+  public func connect(
+    to url: URL, headers: [String: String] = [:]
+  ) async throws -> any BidirectionalEventStream {
     await observer.operation(name: "WebSocket connect") { op in
       op.set(Keys.connectionURL, url.absoluteString)
-      let task = session.webSocketTask(with: url)
-      let stream = WebSocketEventStream(connection: task)
+      var request = URLRequest(url: url)
+      for (name, value) in headers {
+        request.setValue(value, forHTTPHeaderField: name)
+      }
+      let connection = makeConnection(request)
+      let stream = WebSocketEventStream(connection: connection)
       await stream.start(observer: observer)
       return stream
     }

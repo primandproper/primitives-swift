@@ -51,7 +51,7 @@ public actor NoopBidirectionalEventStream: BidirectionalEventStream {
 public struct NoopEventStreamConnector: EventStreamConnector {
   public init() {}
 
-  public func connect(to url: URL) async throws -> any EventStream {
+  public func connect(to url: URL, headers: [String: String] = [:]) async throws -> any EventStream {
     NoopEventStream()
   }
 }
@@ -61,7 +61,9 @@ public struct NoopEventStreamConnector: EventStreamConnector {
 public struct NoopBidirectionalEventStreamConnector: BidirectionalEventStreamConnector {
   public init() {}
 
-  public func connect(to url: URL) async throws -> any BidirectionalEventStream {
+  public func connect(
+    to url: URL, headers: [String: String] = [:]
+  ) async throws -> any BidirectionalEventStream {
     NoopBidirectionalEventStream()
   }
 }

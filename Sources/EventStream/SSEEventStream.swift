@@ -101,9 +101,14 @@ public struct SSEEventStreamConnector: EventStreamConnector {
   /// Opens `url` as an SSE connection. Mirrors the shape of Go's `UpgradeToEventStream`: a non-2xx
   /// response, a non-HTTP response, or any transport failure throws before any ``SSEEventStream`` is
   /// created, since there is nothing yet to hand back.
-  public func connect(to url: URL) async throws -> any EventStream {
+  public func connect(to url: URL, headers: [String: String] = [:]) async throws -> any EventStream {
     try await observer.operation(name: "SSE connect") { op in
       var request = URLRequest(url: url)
+      // Apply caller headers first, then set `Accept` last so a custom header can't clobber the SSE
+      // content-type negotiation the stream depends on.
+      for (name, value) in headers {
+        request.setValue(value, forHTTPHeaderField: name)
+      }
       request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
       op.set(Keys.connectionURL, url.absoluteString)

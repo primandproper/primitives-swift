@@ -5,10 +5,13 @@ import os
 /// over time, so a test can drive `URLSession.bytes(for:)`'s progressive delivery without a live
 /// network — the SSE analogue of `HTTPClientTests`' single-shot `StubURLProtocol`.
 ///
-/// The stub token travels in the request URL's `token` query item (not a header) because
-/// ``SSEEventStreamConnector`` builds its own `URLRequest` internally and offers no header injection
-/// seam, unlike `HTTPClient`, which takes a caller-built `URLRequest` directly.
+/// The stub token travels in an `X-Stub-Token` request *header*, which doubles as proof that
+/// ``SSEEventStreamConnector/connect(to:headers:)`` actually delivers caller headers onto the outbound
+/// request: if the header didn't arrive, routing would fail and the stub would 400. Tests can also read
+/// back every header the request carried via ``receivedHeaders(for:)``.
 final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
+  static let tokenHeader = "X-Stub-Token"
+
   enum Completion: Sendable {
     case finish
     case fail(any Error & Sendable)
@@ -36,18 +39,26 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
   private static let registry =
     OSAllocatedUnfairLock<[String: Behavior]>(initialState: [:])
 
+  /// Every request header the stub saw for a given token, recorded in `startLoading` so a test can
+  /// assert exactly which headers ``SSEEventStreamConnector`` put on the wire.
+  private static let receivedHeadersByToken =
+    OSAllocatedUnfairLock<[String: [String: String]]>(initialState: [:])
+
   static func register(_ token: String, _ behavior: Behavior) {
     registry.withLock { $0[token] = behavior }
   }
 
   static func unregister(_ token: String) {
     registry.withLock { $0[token] = nil }
+    receivedHeadersByToken.withLock { $0[token] = nil }
+  }
+
+  static func receivedHeaders(for token: String) -> [String: String]? {
+    receivedHeadersByToken.withLock { $0[token] }
   }
 
   private static func token(for request: URLRequest) -> String? {
-    guard let url = request.url else { return nil }
-    return URLComponents(url: url, resolvingAgainstBaseURL: false)?
-      .queryItems?.first(where: { $0.name == "token" })?.value
+    request.value(forHTTPHeaderField: tokenHeader)
   }
 
   private let parkedForCancellation = OSAllocatedUnfairLock(initialState: false)
@@ -63,6 +74,8 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
       client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
       return
     }
+
+    Self.receivedHeadersByToken.withLock { $0[token] = request.allHTTPHeaderFields ?? [:] }
 
     // Mark "parked" synchronously, before any async hop, when there's nothing to deliver first: a
     // `.hangUntilCancelled` behavior with no chunks can otherwise race a same-tick `close()` against the
@@ -116,7 +129,15 @@ func streamingStubbedSession() -> URLSession {
   return URLSession(configuration: configuration)
 }
 
-/// A URL carrying `token` as a query item, so the stub can find its registered behavior.
-func streamingStubbedURL(token: String) -> URL {
-  URL(string: "https://example.test/events?token=\(token)")!
+/// The endpoint every stubbed connection dials. Routing is by header (see `stubRoutingHeaders`), not
+/// by URL, so a single fixed URL serves every test.
+func streamingStubbedURL() -> URL {
+  URL(string: "https://example.test/events")!
+}
+
+/// The header set that routes a stubbed request to `token`'s registered behavior — passed to
+/// ``SSEEventStreamConnector/connect(to:headers:)`` so the token rides the same header channel real
+/// auth headers would.
+func stubRoutingHeaders(token: String) -> [String: String] {
+  [StreamingStubURLProtocol.tokenHeader: token]
 }
