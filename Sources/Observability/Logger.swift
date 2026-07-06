@@ -64,15 +64,19 @@ public struct OSLogLogger: Logger {
   }
 
   public func info(_ message: String) {
-    backing.info("\(self.render(message), privacy: .public)")
+    backing.info("\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
   }
 
   public func debug(_ message: String) {
-    backing.debug("\(self.render(message), privacy: .public)")
+    backing.debug("\(self.renderPublic(message), privacy: .public) \(self.renderFields(), privacy: .private)")
   }
 
   public func error(_ whatWasHappening: String, _ error: Error) {
-    backing.error("\(self.render("\(whatWasHappening): \(error)"), privacy: .public)")
+    // The developer-supplied context stays public; the error value may carry PII, so it rides the
+    // private channel alongside the accumulated fields.
+    backing.error(
+      "\(self.renderPublic(whatWasHappening), privacy: .public) \(self.renderFields(extra: "\(error)"), privacy: .private)"
+    )
   }
 
   public func withName(_ name: String) -> any Logger {
@@ -85,15 +89,24 @@ public struct OSLogLogger: Logger {
     return OSLogLogger(backing: backing, name: name, fields: next)
   }
 
-  private func render(_ message: String) -> String {
+  /// The always-visible portion: logger name, the message, and the *keys* of the accumulated fields
+  /// (never their values), so you can see the shape of a log line even when its values are redacted.
+  func renderPublic(_ message: String) -> String {
     var parts: [String] = []
     if !name.isEmpty { parts.append("[\(name)]") }
     parts.append(message)
     if !fields.isEmpty {
-      parts.append(
-        fields.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))
+      parts.append("{" + fields.keys.sorted().joined(separator: " ") + "}")
     }
     return parts.joined(separator: " ")
+  }
+
+  /// The redactable portion: full `key=value` pairs (plus any `extra` such as an error value). Rendered
+  /// with `privacy: .private` so unified logging masks the values unless the reader is trusted.
+  func renderFields(extra: String? = nil) -> String {
+    var pairs = fields.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+    if let extra { pairs.append(extra) }
+    return pairs.joined(separator: " ")
   }
 }
 

@@ -41,6 +41,13 @@ public actor WebSocketEventStream: BidirectionalEventStream {
   /// `self` is a fully-initialized actor reference.
   func start(observer: any Observer) {
     connection.resume()
+    // Tear down the connection and receive loop if the consumer abandons `events` (e.g. breaks out of
+    // its `for try await` without calling `close()`, or its consuming task is cancelled). Without this
+    // the receive loop keeps awaiting frames and the underlying socket stays live forever. The handler
+    // is `@Sendable` and non-isolated, so it hops back onto the actor via an unstructured `Task`.
+    continuation.onTermination = { [weak self] _ in
+      Task { await self?.close() }
+    }
     receiveTask = Task { [weak self] in
       await self?.receiveLoop(observer: observer)
     }

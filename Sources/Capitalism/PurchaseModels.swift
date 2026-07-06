@@ -104,9 +104,14 @@ public struct PurchaseOptions: Sendable, Equatable {
 }
 
 /// The outcome of a purchase attempt, ported from StoreKit's `Product.PurchaseResult`.
-public enum PurchaseResult: Sendable, Equatable {
-  /// The purchase completed and its transaction verified; carries the granted ``Entitlement``.
-  case success(Entitlement)
+public enum PurchaseResult: Sendable {
+  /// The purchase completed and its transaction verified; carries the granted ``Entitlement`` and a
+  /// `finish` handle the caller invokes **after** durably persisting the grant. Finishing tells StoreKit
+  /// to stop re-delivering the transaction, so the caller must not finish until the entitlement is
+  /// saved: finishing first would permanently lose a paid consumable if the app crashed in between.
+  /// StoreKit re-delivers an unfinished transaction on the next launch, so a deferred (or skipped)
+  /// finish is safe. `finish` is idempotent.
+  case success(Entitlement, finish: @Sendable () async -> Void)
   /// The purchase is deferred pending external action (e.g. Ask to Buy, or Strong Customer
   /// Authentication). No entitlement yet; watch ``PurchaseManager/transactionUpdates()`` for the
   /// eventual resolution.
@@ -115,16 +120,44 @@ public enum PurchaseResult: Sendable, Equatable {
   case userCancelled
 }
 
+extension PurchaseResult: Equatable {
+  /// Equality compares the payload ``Entitlement`` only; the `finish` handle is behavioral, not part of
+  /// a result's identity (and closures aren't `Equatable`).
+  public static func == (lhs: PurchaseResult, rhs: PurchaseResult) -> Bool {
+    switch (lhs, rhs) {
+    case let (.success(l, _), .success(r, _)): return l == r
+    case (.pending, .pending), (.userCancelled, .userCancelled): return true
+    default: return false
+    }
+  }
+}
+
 /// A transaction that arrived out-of-band — a renewal, a revocation, an Ask-to-Buy approval, or a
 /// purchase made on another device. Delivered by ``PurchaseManager/transactionUpdates()``. This is the
 /// on-device replacement for Go's `HandleEventWebhook`: instead of the server verifying an inbound
 /// provider webhook, the client observes StoreKit's own verified transaction feed.
-public struct TransactionUpdate: Sendable, Equatable {
+public struct TransactionUpdate: Sendable {
   /// The entitlement state after this update (check ``Entitlement/isActive`` to distinguish a renewal
   /// from a revocation/expiration).
   public let entitlement: Entitlement
 
-  public init(entitlement: Entitlement) {
+  /// Called by the consumer **after** it has durably persisted ``entitlement``. StoreKit keeps
+  /// re-delivering the transaction until it is finished, so finishing before the grant is saved risks
+  /// losing it on a crash. Idempotent; the default handle is a no-op for value-layer construction.
+  private let onFinish: @Sendable () async -> Void
+
+  public init(entitlement: Entitlement, finish: @escaping @Sendable () async -> Void = {}) {
     self.entitlement = entitlement
+    self.onFinish = finish
+  }
+
+  /// Finishes the underlying transaction. Call only after ``entitlement`` has been persisted.
+  public func finish() async { await onFinish() }
+}
+
+extension TransactionUpdate: Equatable {
+  /// Equality compares ``entitlement`` only; the `finish` handle is behavioral, not part of identity.
+  public static func == (lhs: TransactionUpdate, rhs: TransactionUpdate) -> Bool {
+    lhs.entitlement == rhs.entitlement
   }
 }

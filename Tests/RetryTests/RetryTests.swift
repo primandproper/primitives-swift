@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import Retry
@@ -116,6 +117,50 @@ struct ExponentialBackoffPolicyTests {
     let unretryable = try #require(thrown as? UnretryableError)
     #expect(unretryable.underlying as? Underlying == Underlying())
     #expect(await counter.count == 1)
+  }
+
+  // Regression (NET-06): a URLSession request cancelled by task teardown surfaces as
+  // `URLError.cancelled`, not `CancellationError`. `isTerminal` must treat it as terminal so the loop
+  // short-circuits immediately instead of relying on the next `Task.sleep` to unwind it. Without the fix
+  // this would burn all 5 attempts.
+  @Test("a URLError.cancelled from the operation short-circuits the loop")
+  func terminalURLErrorCancelledShortCircuits() async {
+    let policy = fastPolicy(maxAttempts: 5)
+    let counter = Counter()
+    var thrown: (any Error)?
+
+    do {
+      _ = try await policy.execute { () async throws -> Int in
+        await counter.increment()
+        throw URLError(.cancelled)
+      }
+    } catch {
+      thrown = error
+    }
+
+    #expect((thrown as? URLError)?.code == .cancelled)
+    #expect(await counter.count == 1)
+  }
+
+  // A non-cancellation URLError (e.g. a transient network drop) is not terminal and must still be
+  // retried — guards against `isTerminal` over-matching on URLError as a whole.
+  @Test("a non-cancellation URLError is retried, not treated as terminal")
+  func nonCancellationURLErrorIsRetried() async {
+    let policy = fastPolicy(maxAttempts: 3)
+    let counter = Counter()
+    var thrown: (any Error)?
+
+    do {
+      _ = try await policy.execute { () async throws -> Int in
+        await counter.increment()
+        throw URLError(.networkConnectionLost)
+      }
+    } catch {
+      thrown = error
+    }
+
+    #expect((thrown as? URLError)?.code == .networkConnectionLost)
+    #expect(await counter.count == 3)
   }
 
   // Regression: a sub-2ns delay makes the whole-nanosecond half-delay truncate to 0. Jitter must be

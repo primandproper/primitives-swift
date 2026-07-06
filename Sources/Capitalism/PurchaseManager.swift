@@ -23,8 +23,10 @@ public protocol PurchaseManager: Sendable {
   func products(for identifiers: [String]) async throws -> [PurchaseProduct]
 
   /// Purchases the product with the given identifier, presenting the system purchase sheet. Returns the
-  /// outcome; on ``PurchaseResult/success(_:)`` the underlying transaction has already been verified and
-  /// finished. The client analogue of Go's `CreatePaymentIntent`/`CreateSubscription`.
+  /// outcome; on ``PurchaseResult/success(_:finish:)`` the underlying transaction has been verified but
+  /// **not** finished — the caller invokes the `finish` handle after durably persisting the grant, so a
+  /// crash before persistence can't lose a paid consumable. The client analogue of Go's
+  /// `CreatePaymentIntent`/`CreateSubscription`.
   func purchase(productID: String, options: PurchaseOptions) async throws -> PurchaseResult
 
   /// The set of entitlements the user currently holds, read from StoreKit's current-entitlements feed.
@@ -38,8 +40,9 @@ public protocol PurchaseManager: Sendable {
   func restorePurchases() async throws
 
   /// A stream of transactions arriving outside a direct purchase — renewals, revocations, Ask-to-Buy
-  /// approvals, cross-device purchases. The on-device replacement for Go's `HandleEventWebhook`. The
-  /// conformer finishes each transaction before yielding it. The stream ends when its consuming task is
+  /// approvals, cross-device purchases. The on-device replacement for Go's `HandleEventWebhook`. Each
+  /// ``TransactionUpdate`` carries a `finish` handle the consumer invokes after persisting the grant;
+  /// the conformer does not finish on the consumer's behalf. The stream ends when its consuming task is
   /// cancelled.
   func transactionUpdates() -> AsyncStream<TransactionUpdate>
 }

@@ -92,7 +92,8 @@ extension Info {
   /// of Go's `WriteJSON`.
   public func jsonData() throws -> Data {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted]
+    // `.sortedKeys` makes key ordering deterministic across runs so callers get stable output.
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     return try encoder.encode(self)
   }
 
@@ -106,13 +107,27 @@ extension Info {
   public func writeJSONToStdout() throws {
     var stdout = StandardOutput()
     try writeJSON(to: &stdout)
+    // `TextOutputStream.write` can't throw, so `StandardOutput` captures any write failure; surface
+    // it here rather than swallowing it, mirroring Go's `WriteJSONToStdout` returning the error.
+    if let error = stdout.failure {
+      throw error
+    }
   }
 }
 
 /// A `TextOutputStream` over the process's standard output, so ``Info/writeJSONToStdout()`` reaches
 /// the real `stdout` (unbuffered, unlike `print`), matching Go's `os.Stdout`.
 private struct StandardOutput: TextOutputStream {
+  /// First write failure, if any. `TextOutputStream.write` is non-throwing, so the error is stored
+  /// for ``Info/writeJSONToStdout()`` to re-throw.
+  private(set) var failure: (any Error)?
+
   mutating func write(_ string: String) {
-    try? FileHandle.standardOutput.write(contentsOf: Data(string.utf8))
+    guard failure == nil else { return }
+    do {
+      try FileHandle.standardOutput.write(contentsOf: Data(string.utf8))
+    } catch {
+      failure = error
+    }
   }
 }

@@ -134,4 +134,27 @@ struct WebSocketEventStreamTests {
     await stream.close()
     await stream.close()
   }
+
+  @Test(
+    "abandoning the consumer tears down the connection via events.onTermination",
+    .timeLimit(.minutes(1)))
+  func abandoningConsumerCancelsConnection() async throws {
+    // Without an `onTermination` handler on `events`, cancelling the consuming task would leave the
+    // receive loop awaiting frames and the socket live forever. onTermination hops to the actor and
+    // runs close(), which cancels the connection with `.goingAway`.
+    let connection = FakeWebSocketConnection()
+    let stream = WebSocketEventStream(connection: connection)
+    await stream.start(observer: recordingObserver("test"))
+
+    let consumer = Task {
+      for try await _ in stream.events {}
+    }
+    consumer.cancel()
+
+    // Wait for the onTermination-driven close() to reach the connection.
+    while connection.cancelledWith == nil {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(connection.cancelledWith == .goingAway)
+  }
 }

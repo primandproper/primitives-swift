@@ -122,6 +122,19 @@ public actor StandardCircuitBreaker: CircuitBreaker {
     window.recordFailure(at: bucketIndex(now))
     failedCounter.increment()
 
+    // A failure during the half-open trial proves the dependency is still down: re-trip immediately,
+    // regardless of the windowed rate, matching how the Go library's Fail() re-opened in the half-open
+    // state. Under production timings (resetTimeout > window) the samples that first tripped the breaker
+    // have aged out of the rolling window by the time the trial runs, so the rate check alone can't reach
+    // shouldTrip on a lone trial failure — the breaker would stay half-open and keep flooding a dead
+    // dependency.
+    if state(at: now) == .halfOpen {
+      openedAt = now
+      trippedCounter.increment()
+      logger.info("circuit breaker re-tripped after failed trial")
+      return
+    }
+
     if shouldTrip(at: now) {
       openedAt = now
       trippedCounter.increment()

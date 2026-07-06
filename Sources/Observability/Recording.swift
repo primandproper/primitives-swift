@@ -76,6 +76,7 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
   private struct State {
     var observations: [Observation] = []
     var errors: [(context: String, error: String)] = []
+    var acknowledgements: [String] = []
     var ended = false
   }
 
@@ -89,6 +90,9 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
 
   public var observations: [Observation] { state.withLock { $0.observations } }
   public var recordedErrors: [(context: String, error: String)] { state.withLock { $0.errors } }
+  /// Descriptions passed to a successful `acknowledge(nil, …)`, mirroring the info log the production
+  /// operation writes on the success path so tests can observe it.
+  public var acknowledgements: [String] { state.withLock { $0.acknowledgements } }
   public var ended: Bool { state.withLock { $0.ended } }
 
   /// Keys seen on a given pillar (`both` always counts toward span and log too).
@@ -143,6 +147,10 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
   public func acknowledge(_ error: Error?, _ description: String) {
     if let error {
       state.withLock { $0.errors.append((description, String(describing: error))) }
+    } else {
+      // LiveOperation logs `info(description)` on the success path; capture it so tests observing an
+      // acknowledged success aren't blind to it.
+      state.withLock { $0.acknowledgements.append(description) }
     }
   }
 

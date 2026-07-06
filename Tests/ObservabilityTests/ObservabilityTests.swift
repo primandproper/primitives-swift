@@ -1,5 +1,7 @@
 import Foundation
+import Metrics
 import Testing
+import struct os.OSAllocatedUnfairLock
 
 @testable import Observability
 
@@ -133,5 +135,167 @@ struct LoggerTests {
     let logger = NoopLogger().withSpan(span)
     logger.info("hello")  // no crash, no output
     #expect(Bool(true))
+  }
+}
+
+// MARK: - OBS-01: concurrent set() must not drop keys
+
+/// Value-semantics `Logger` that keeps its accumulated fields inspectable, so we can assert none were
+/// lost across concurrent `set` calls.
+private struct CapturingLogger: Logger {
+  let fields: [String: String]
+  init(fields: [String: String] = [:]) { self.fields = fields }
+  func info(_ message: String) {}
+  func debug(_ message: String) {}
+  func error(_ whatWasHappening: String, _ error: Error) {}
+  func withName(_ name: String) -> any Logger { self }
+  func withValue(_ key: String, _ value: Any) -> any Logger {
+    var next = fields
+    next[key] = String(describing: value)
+    return CapturingLogger(fields: next)
+  }
+}
+
+@Suite("Operation concurrency")
+struct OperationConcurrencyTests {
+
+  @Test("concurrent set() calls never drop keys")
+  func concurrentSetNoLostUpdates() async {
+    let span = NoopSpan(
+      name: "t", context: SpanContext(traceID: "t", spanID: "s", parentSpanID: nil))
+    let op = LiveOperation(span: span, logger: CapturingLogger())
+
+    let n = 500
+    await withTaskGroup(of: Void.self) { group in
+      for i in 0..<n { group.addTask { op.set("key\(i)", i) } }
+    }
+
+    let captured = op.logger as! CapturingLogger
+    #expect(captured.fields.count == n)
+    for i in 0..<n { #expect(captured.fields["key\(i)"] == "\(i)") }
+  }
+}
+
+// MARK: - OBS-02: noop metrics stay silent even after a factory is installed
+
+private final class SpyCounterHandler: CounterHandler {
+  let onIncrement: @Sendable () -> Void
+  init(_ onIncrement: @escaping @Sendable () -> Void) { self.onIncrement = onIncrement }
+  func increment(by amount: Int64) { onIncrement() }
+  func reset() {}
+}
+
+private final class SpyMetricsFactory: MetricsFactory, @unchecked Sendable {
+  let count = OSAllocatedUnfairLock(initialState: 0)
+  var increments: Int { count.withLock { $0 } }
+
+  func makeCounter(label: String, dimensions: [(String, String)]) -> CounterHandler {
+    SpyCounterHandler { [count] in count.withLock { $0 += 1 } }
+  }
+  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool) -> RecorderHandler
+  {
+    NOOPMetricsHandler.instance
+  }
+  func makeTimer(label: String, dimensions: [(String, String)]) -> TimerHandler {
+    NOOPMetricsHandler.instance
+  }
+  func destroyCounter(_ handler: CounterHandler) {}
+  func destroyRecorder(_ handler: RecorderHandler) {}
+  func destroyTimer(_ handler: TimerHandler) {}
+}
+
+@Suite("Metrics noop isolation")
+struct MetricsNoopIsolationTests {
+
+  @Test("noop provider never emits, even after a real factory is installed")
+  func noopStaysSilent() {
+    let spy = SpyMetricsFactory()
+    // Bind the spy as the current factory for the scope, without a one-time global bootstrap.
+    withMetricsFactory(spy) {
+      // A provider bound to the installed factory does emit …
+      SwiftMetricsProvider().counter("real", tags: [:]).increment()
+      #expect(spy.increments == 1)
+      // … but the noop provider must stay silent regardless of what is installed.
+      NoopMetricsProvider().counter("noop", tags: [:]).increment()
+      #expect(spy.increments == 1)
+    }
+  }
+}
+
+// MARK: - OBS-03: OSLogLogger keeps field values off the public channel
+
+@Suite("OSLogLogger privacy")
+struct OSLogPrivacyTests {
+
+  @Test("field values render to the private channel; keys and name stay public")
+  func fieldValuesArePrivate() {
+    let logger =
+      OSLogLogger(subsystem: "test", category: "test", name: "svc")
+      .withValue(Keys.userID, "SECRET-PII") as! OSLogLogger
+
+    let pub = logger.renderPublic("hello")
+    let priv = logger.renderFields()
+
+    #expect(pub.contains("svc"))  // name public
+    #expect(pub.contains("hello"))  // message public
+    #expect(pub.contains(Keys.userID))  // key public
+    #expect(!pub.contains("SECRET-PII"))  // value NOT on the public channel
+    #expect(priv.contains("\(Keys.userID)=SECRET-PII"))  // value only on the private channel
+  }
+}
+
+// MARK: - OBS-04: lenient config decoding
+
+@Suite("Config lenient decoding")
+struct ConfigLenientDecodingTests {
+
+  @Test("empty object decodes to defaults")
+  func emptyObjectDecodes() throws {
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data("{}".utf8))
+    #expect(cfg.serviceName == "platform-swift")
+    #expect(cfg.logging.provider == .osLog)
+    #expect(cfg.logging.category == "observability")
+    #expect(cfg.logging.subsystem == nil)
+    #expect(cfg.tracing.provider == .signpost)
+    #expect(cfg.metrics.provider == .swiftMetrics)
+  }
+
+  @Test("partial config fills missing keys with defaults")
+  func partialConfigDecodes() throws {
+    let json = #"{"serviceName":"svc","logging":{"provider":"noop"}}"#
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data(json.utf8))
+    #expect(cfg.serviceName == "svc")
+    #expect(cfg.logging.provider == .noop)
+    #expect(cfg.logging.category == "observability")  // default preserved on the present block
+    #expect(cfg.tracing.provider == .signpost)  // whole missing block defaulted
+    #expect(cfg.metrics.provider == .swiftMetrics)
+  }
+}
+
+// MARK: - OBS-05: recording double captures the success-acknowledgement path
+
+@Suite("Recording acknowledge")
+struct RecordingAcknowledgeTests {
+
+  @Test("acknowledge(nil) records the success description")
+  func acknowledgeSuccessRecorded() async {
+    let observer = recordingObserver("test")
+    await observer.operation("op") { op in
+      op.acknowledge(nil, "saved profile")
+    }
+    let op = observer.operations.first!
+    #expect(op.acknowledgements == ["saved profile"])
+    #expect(op.recordedErrors.isEmpty)
+  }
+
+  @Test("acknowledge(error) records the error, not a success")
+  func acknowledgeErrorRecorded() async {
+    let observer = recordingObserver("test")
+    await observer.operation("op") { op in
+      op.acknowledge(SampleError(), "failed to save")
+    }
+    let op = observer.operations.first!
+    #expect(op.acknowledgements.isEmpty)
+    #expect(op.recordedErrors.contains { $0.context == "failed to save" })
   }
 }

@@ -52,15 +52,21 @@ public struct SwiftMetricsProvider: MetricsProvider {
   }
 }
 
-/// Explicit no-op provider for tests. Instruments it returns route to whatever the global factory is
-/// (the swift-metrics default no-op unless an app bootstrapped something), and never to a real backend
-/// of our choosing.
+/// Explicit no-op provider for tests. Instruments it returns are bound to swift-metrics' own
+/// `NOOPMetricsHandler` rather than the process-wide factory, so they stay silent even after an app
+/// calls `MetricsSystem.bootstrap` — a `.noop`-configured component never emits real metrics.
 public struct NoopMetricsProvider: MetricsProvider {
   public init() {}
-  public func counter(_ name: String, tags: [String: String]) -> Counter { Counter(label: name) }
-  public func gauge(_ name: String, tags: [String: String]) -> Gauge { Gauge(label: name) }
-  public func histogram(_ name: String, tags: [String: String]) -> Histogram {
-    Recorder(label: name)
+  public func counter(_ name: String, tags: [String: String]) -> Counter {
+    Counter(label: name, factory: NOOPMetricsHandler.instance)
   }
-  public func timer(_ name: String, tags: [String: String]) -> MetricTimer { Timer(label: name) }
+  public func gauge(_ name: String, tags: [String: String]) -> Gauge {
+    Gauge(label: name, factory: NOOPMetricsHandler.instance)
+  }
+  public func histogram(_ name: String, tags: [String: String]) -> Histogram {
+    Recorder(label: name, factory: NOOPMetricsHandler.instance)
+  }
+  public func timer(_ name: String, tags: [String: String]) -> MetricTimer {
+    Timer(label: name, factory: NOOPMetricsHandler.instance)
+  }
 }

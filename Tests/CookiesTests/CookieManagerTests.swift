@@ -47,7 +47,7 @@ struct CookieManagerConstructionTests {
       _ = try CookieManager(config: cfg)
       Issue.record("expected construction to throw")
     } catch {
-      #expect((error as? CookieError) == .invalidHashKey)
+      #expect(error == .invalidHashKey)
       // The error text must never leak the (secret) key material.
       #expect(!error.localizedDescription.contains(cfg.base64EncodedHashKey))
     }
@@ -61,7 +61,7 @@ struct CookieManagerConstructionTests {
       _ = try CookieManager(config: cfg)
       Issue.record("expected construction to throw")
     } catch {
-      #expect((error as? CookieError) == .invalidBlockKey)
+      #expect(error == .invalidBlockKey)
       #expect(!error.localizedDescription.contains(cfg.base64EncodedBlockKey))
     }
   }
@@ -127,16 +127,26 @@ struct CookieManagerEncodeDecodeTests {
     }
   }
 
-  @Test("an unset lifetime never expires")
-  func noLifetimeNeverExpires() throws {
+  @Test("an unset lifetime falls back to securecookie's 30-day decode bound")
+  func unsetLifetimeUsesDefaultBound() throws {
     let cfg = validConfig()  // lifetime .zero
 
     let signer = try CookieManager(config: cfg, now: { 1000 })
     let encoded = try signer.encode(name: "session", Example(name: "x"))
 
-    let verifier = try CookieManager(config: cfg, now: { 10_000_000 })
-    let decoded = try verifier.decode(name: "session", from: encoded, as: Example.self)
+    // Just inside the 30-day window still verifies.
+    let thirtyDays: Int64 = 86_400 * 30
+    let withinWindow = try CookieManager(config: cfg, now: { 1000 + thirtyDays })
+    let decoded = try withinWindow.decode(name: "session", from: encoded, as: Example.self)
     #expect(decoded == Example(name: "x"))
+
+    // Past the 30-day default — Go's securecookie bounds an unset lifetime to 30 days
+    // (securecookie.New sets maxAge = 86400*30; NewCookieManager only overrides it when
+    // Lifetime > 0), so a captured cookie cannot be replayed indefinitely.
+    let pastWindow = try CookieManager(config: cfg, now: { 1000 + thirtyDays + 1 })
+    #expect(throws: CookieError.expired) {
+      _ = try pastWindow.decode(name: "session", from: encoded, as: Example.self)
+    }
   }
 }
 

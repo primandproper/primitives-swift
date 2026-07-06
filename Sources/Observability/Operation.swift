@@ -57,25 +57,25 @@ public final class LiveOperation: Operation, @unchecked Sendable {
   }
 
   public var logger: any Logger { state.withLock { $0.logger } }
-  private var currentLogger: any Logger { state.withLock { $0.logger } }
 
   @discardableResult
   public func set(_ key: String, _ value: Any) -> any Operation {
     span.attach(key, value)
-    // Compute the enriched logger outside the lock so the non-Sendable `value` never crosses into
-    // the lock's @Sendable closure; only the resulting (Sendable) logger is stored.
-    let updated = currentLogger.withValue(key, value)
-    state.withLock { $0.logger = updated }
+    // Stringify first so the non-Sendable `value` never crosses into the lock's @Sendable closure,
+    // then read-modify-write under a single acquisition — otherwise concurrent sets that each read
+    // the base logger before either stores would silently drop one another's keys.
+    let stringified = String(describing: value)
+    state.withLock { $0.logger = $0.logger.withValue(key, stringified) }
     return self
   }
 
   @discardableResult
   public func setValues(_ values: [String: Any]) -> any Operation {
     for (k, v) in values { span.attach(k, v) }
-    var enriched = currentLogger
-    for (k, v) in values { enriched = enriched.withValue(k, v) }
-    let updated = enriched
-    state.withLock { $0.logger = updated }
+    let stringified = values.mapValues { String(describing: $0) }
+    state.withLock {
+      for (k, v) in stringified { $0.logger = $0.logger.withValue(k, v) }
+    }
     return self
   }
 
@@ -87,8 +87,8 @@ public final class LiveOperation: Operation, @unchecked Sendable {
 
   @discardableResult
   public func logOnly(_ key: String, _ value: Any) -> any Operation {
-    let updated = currentLogger.withValue(key, value)
-    state.withLock { $0.logger = updated }
+    let stringified = String(describing: value)
+    state.withLock { $0.logger = $0.logger.withValue(key, stringified) }
     return self
   }
 

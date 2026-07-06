@@ -19,4 +19,24 @@ public struct PostHogConfig: Codable, Sendable, Equatable {
     self.personalAPIKey = personalAPIKey
     self.endpoint = endpoint
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case projectAPIKey
+    case personalAPIKey
+    case endpoint
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    projectAPIKey = try c.decodeIfPresent(String.self, forKey: .projectAPIKey) ?? ""
+    personalAPIKey = try c.decodeIfPresent(String.self, forKey: .personalAPIKey) ?? ""
+    endpoint = try c.decodeIfPresent(String.self, forKey: .endpoint) ?? ""
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(projectAPIKey, forKey: .projectAPIKey)
+    try c.encode(personalAPIKey, forKey: .personalAPIKey)
+    try c.encode(endpoint, forKey: .endpoint)
+  }
 }

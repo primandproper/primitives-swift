@@ -75,9 +75,12 @@ public actor StoreKitPurchaseManager: PurchaseManager {
       switch result {
       case .success(let verification):
         let transaction = try Self.checkVerified(verification)
-        await transaction.finish()
         op.set("storekit.transaction_id", String(transaction.id))
-        return .success(Entitlement(transaction))
+        // Hand the caller a `finish` handle rather than finishing here: StoreKit keeps re-delivering the
+        // transaction until it is finished, so finishing before the caller has persisted the grant would
+        // permanently lose a paid consumable if the app crashed in between. The entitlement crosses the
+        // boundary first; the caller finishes once the grant is durable.
+        return .success(Entitlement(transaction), finish: { await transaction.finish() })
       case .pending:
         op.set("storekit.result", "pending")
         return .pending
@@ -85,13 +88,16 @@ public actor StoreKitPurchaseManager: PurchaseManager {
         op.set("storekit.result", "user_cancelled")
         return .userCancelled
       @unknown default:
-        throw op.error(CapitalismError.unknownPurchaseResult, "purchasing product")
+        throw CapitalismError.unknownPurchaseResult
       }
-    } catch let error as CapitalismError {
-      throw op.error(error, "purchasing product")
     } catch {
-      throw op.error(
-        CapitalismError.purchaseFailed(String(describing: error)), "purchasing product")
+      // Surface a typed ``CapitalismError`` so callers can `catch` it — mirroring how `LLMHTTP` rethrows
+      // `LLMError` raw. A verification/`@unknown` failure passes through; any other StoreKit error is
+      // classified as ``CapitalismError/purchaseFailed(_:)``. `acknowledge` records it without the
+      // `ObservabilityError` wrapping that `op.error` would add (which is what erased the type before).
+      let failure = Self.classifyPurchaseError(error)
+      op.acknowledge(failure, "purchasing product")
+      throw failure
     }
   }
 
@@ -124,10 +130,13 @@ public actor StoreKitPurchaseManager: PurchaseManager {
       let task = Task {
         for await result in Transaction.updates {
           guard case .verified(let transaction) = result else { continue }
-          // Finish the out-of-band transaction (renewal, Ask-to-Buy approval, cross-device buy) so
-          // StoreKit stops re-delivering it, then hand it to the consumer.
-          await transaction.finish()
-          continuation.yield(TransactionUpdate(entitlement: Entitlement(transaction)))
+          // Hand the out-of-band transaction (renewal, Ask-to-Buy approval, cross-device buy) to the
+          // consumer with a `finish` handle rather than finishing it here. StoreKit keeps re-delivering
+          // until the transaction is finished, so the consumer finishes only after persisting the grant;
+          // finishing first would drop the update if it crashed in between.
+          continuation.yield(
+            TransactionUpdate(
+              entitlement: Entitlement(transaction), finish: { await transaction.finish() }))
         }
         continuation.finish()
       }
@@ -146,10 +155,23 @@ public actor StoreKitPurchaseManager: PurchaseManager {
       throw op.error(error, "resolving product")
     }
     guard let product = fetched.first else {
-      throw op.error(CapitalismError.productNotFound(id), "resolving product")
+      // Typed error: record it but rethrow raw so callers can `catch CapitalismError.productNotFound`.
+      let error = CapitalismError.productNotFound(id)
+      op.acknowledge(error, "resolving product")
+      throw error
     }
     productCache[id] = product
     return product
+  }
+
+  /// Maps an error thrown while completing a purchase onto the typed ``CapitalismError`` the manager
+  /// surfaces: a ``CapitalismError`` (from verification or the `@unknown default`) passes through raw, and
+  /// any other error is classified as ``CapitalismError/purchaseFailed(_:)`` (keeping StoreKit's
+  /// non-`Equatable` error type off the public boundary). Extracted so the typed-error contract is
+  /// unit-testable without a live StoreKit purchase.
+  static func classifyPurchaseError(_ error: Error) -> CapitalismError {
+    if let capitalism = error as? CapitalismError { return capitalism }
+    return .purchaseFailed(String(describing: error))
   }
 
   /// Unwraps StoreKit's `VerificationResult`, throwing ``CapitalismError/unverifiedTransaction`` when

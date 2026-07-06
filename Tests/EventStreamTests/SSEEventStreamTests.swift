@@ -78,6 +78,34 @@ struct SSEEventStreamHermeticTests {
     await stream.close()
     await stream.close()
   }
+
+  @Test(
+    "abandoning the consumer tears down the pump loop via events.onTermination",
+    .timeLimit(.minutes(1)))
+  func abandoningConsumerTearsDownPump() async throws {
+    // A never-finishing byte source: without an `onTermination` handler on `events`, cancelling the
+    // consuming task would leave the pump iterating these bytes (and, in production, the URLSessionTask
+    // live) forever. The byte source's own `onTermination` fires only when the pump loop is torn down,
+    // so awaiting it proves the abandoned consumer reaped the read loop.
+    let (bytes, _byteContinuation) = AsyncStream<UInt8>.makeStream()
+    let (torndown, torndownContinuation) = AsyncStream<Void>.makeStream()
+    _byteContinuation.onTermination = { _ in
+      torndownContinuation.yield(())
+      torndownContinuation.finish()
+    }
+
+    let stream = SSEEventStream()
+    await stream.start(bytes: bytes, networkTask: nil, observer: recordingObserver("test"))
+
+    let consumer = Task {
+      for try await _ in stream.events {}
+    }
+    consumer.cancel()
+
+    var iterator = torndown.makeAsyncIterator()
+    let fired: Void? = await iterator.next()
+    #expect(fired != nil)
+  }
 }
 
 @Suite("SSEEventStreamConnector (live loopback, no real network)")

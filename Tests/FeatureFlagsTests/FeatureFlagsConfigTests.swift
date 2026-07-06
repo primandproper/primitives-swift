@@ -53,6 +53,23 @@ struct PostHogConfigTests {
     #expect(config.endpoint == "https://eu.posthog.com")
   }
 
+  @Test("missing fields decode to Go's zero values")
+  func decodesMissingFields() throws {
+    let config = try JSONDecoder().decode(PostHogConfig.self, from: Data("{}".utf8))
+    #expect(config.projectAPIKey == "")
+    #expect(config.personalAPIKey == "")
+    #expect(config.endpoint == "")
+  }
+
+  @Test("a partial payload decodes, defaulting the absent fields")
+  func decodesPartialFields() throws {
+    let config = try JSONDecoder().decode(
+      PostHogConfig.self, from: Data(#"{"projectAPIKey":"proj"}"#.utf8))
+    #expect(config.projectAPIKey == "proj")
+    #expect(config.personalAPIKey == "")
+    #expect(config.endpoint == "")
+  }
+
   @Test("round-trips through JSON")
   func roundTrip() throws {
     let original = PostHogConfig(projectAPIKey: "proj", personalAPIKey: "personal", endpoint: "")

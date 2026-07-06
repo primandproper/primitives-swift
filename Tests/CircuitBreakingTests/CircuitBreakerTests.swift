@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import CircuitBreaking
@@ -127,6 +128,31 @@ struct StandardCircuitBreakerTests {
     #expect(await cb.cannotProceed())
   }
 
+  @Test("re-opens on a failed trial even after the tripping samples have aged out of the window")
+  func reopensOnHalfOpenFailureAfterWindowAgedOut() async throws {
+    // Reproduces NET-01 under production-shaped timings: resetTimeout > window, so by the time the
+    // half-open trial runs, the failures that first tripped the breaker have aged out of the rolling
+    // window. With a sample threshold above 1, the lone trial failure can never reach shouldTrip via
+    // the windowed-rate path, so before the fix the breaker stayed stuck half-open. Timings are kept
+    // tiny (window 50ms, resetTimeout 120ms) to avoid large real sleeps; the actor has no injectable
+    // clock yet, so a short real window is used to reproduce the aging-out deterministically.
+    let cb = StandardCircuitBreaker(
+      name: "aged", errorRatePercentage: 50, minimumSampleThreshold: 2,
+      resetTimeout: .milliseconds(120), window: .milliseconds(50))
+
+    await cb.recordFailure()
+    await cb.recordFailure()  // two samples at 100% -> trips
+    #expect(await cb.cannotProceed())
+
+    // Past resetTimeout (120ms) so we are half-open, and well past the 50ms window so those two
+    // failures have aged out.
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(await cb.canProceed())  // half-open: a trial is allowed
+
+    await cb.recordFailure()  // lone trial failure (total sample count 1 < threshold 2)
+    #expect(await cb.cannotProceed())  // must re-trip regardless of the aged-out windowed rate
+  }
+
   @Test("execute records failures and rethrows, tripping after enough of them")
   func executeRecordsFailures() async {
     let cb = StandardCircuitBreaker(
@@ -149,6 +175,20 @@ struct StandardCircuitBreakerTests {
 
     await #expect(throws: CancellationError.self) {
       try await cb.execute { throw CancellationError() }
+    }
+    #expect(await cb.canProceed())
+  }
+
+  @Test("execute rethrows a cancelled URLError without counting it as a failure")
+  func executeIgnoresURLErrorCancelled() async {
+    // NET-07: a cancelled URLSession request surfaces as URLError.cancelled, not CancellationError.
+    // execute must treat it as cancellation (consistent with HTTPClient) and not record a breaker
+    // failure. Rate 1% at 1 sample would trip on any single real failure; this must not be one.
+    let cb = StandardCircuitBreaker(
+      name: "urlcancel", errorRatePercentage: 1, minimumSampleThreshold: 1, resetTimeout: .seconds(60))
+
+    await #expect(throws: URLError.self) {
+      try await cb.execute { throw URLError(.cancelled) }
     }
     #expect(await cb.canProceed())
   }

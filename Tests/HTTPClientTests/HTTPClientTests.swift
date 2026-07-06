@@ -213,6 +213,64 @@ struct HTTPClientCircuitBreakerTests {
     #expect(breaker.failures == 1)
     #expect(breaker.successes == 0)
   }
+
+  // NET-03: a completed round-trip with a gateway-fault status (502/503/504) must record a breaker
+  // *failure*, not success — otherwise a 100%-500s server can never trip the breaker. The response is
+  // still returned (matching Go's Client.Do); only the breaker outcome differs.
+  @Test("the default classifier records failure for 502/503/504 while still returning the response")
+  func closedBreakerRecordsFailureOnGatewayStatus() async throws {
+    for status in [502, 503, 504] {
+      let token = UUID().uuidString
+      StubURLProtocol.register(token) { _ in .respond(status: status, body: Data(), headers: [:]) }
+      defer { StubURLProtocol.unregister(token) }
+
+      let breaker = TestBreaker(open: false)
+      let client = HTTPClient(
+        session: stubbedSession(), observer: recordingObserver("test"),
+        metrics: NoopMetricsProvider(), circuitBreaker: breaker)
+
+      let response = try await client.perform(stubbedRequest(token: token))
+
+      #expect(response.statusCode == status)
+      #expect(breaker.failures == 1)
+      #expect(breaker.successes == 0)
+    }
+  }
+
+  @Test("the default classifier records success for a 500 (only the gateway trio counts as failure)")
+  func closedBreakerRecordsSuccessOnPlain500() async throws {
+    let token = UUID().uuidString
+    StubURLProtocol.register(token) { _ in .respond(status: 500, body: Data(), headers: [:]) }
+    defer { StubURLProtocol.unregister(token) }
+
+    let breaker = TestBreaker(open: false)
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), circuitBreaker: breaker)
+
+    _ = try await client.perform(stubbedRequest(token: token))
+
+    #expect(breaker.successes == 1)
+    #expect(breaker.failures == 0)
+  }
+
+  @Test("an injected status classifier overrides the default failure policy")
+  func injectedClassifierOverridesDefault() async throws {
+    let token = UUID().uuidString
+    StubURLProtocol.register(token) { _ in .respond(status: 429, body: Data(), headers: [:]) }
+    defer { StubURLProtocol.unregister(token) }
+
+    let breaker = TestBreaker(open: false)
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), circuitBreaker: breaker,
+      statusFailureClassifier: { $0 == 429 })
+
+    _ = try await client.perform(stubbedRequest(token: token))
+
+    #expect(breaker.failures == 1)
+    #expect(breaker.successes == 0)
+  }
 }
 
 @Suite("HTTPClient cancellation")
@@ -238,5 +296,33 @@ struct HTTPClientCancellationTests {
     await #expect(throws: (any Error).self) {
       _ = try await task.value
     }
+  }
+
+  // NET-02: a cancelled request is the caller abandoning the work, not a transport fault, so it must
+  // NOT record a breaker failure — otherwise a burst of user cancellations could trip a healthy
+  // breaker. Reuses the circuit-breaker suite's inspectable breaker.
+  @Test("cancelling a request does not record a breaker failure")
+  func cancellationDoesNotCountAsBreakerFailure() async throws {
+    let token = UUID().uuidString
+    StubURLProtocol.register(token) { _ in .blockUntilCancelled }
+    defer { StubURLProtocol.unregister(token) }
+
+    let breaker = HTTPClientCircuitBreakerTests.TestBreaker(open: false)
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), circuitBreaker: breaker)
+
+    let task = Task {
+      try await client.perform(stubbedRequest(token: token))
+    }
+
+    try await Task.sleep(for: .milliseconds(50))
+    task.cancel()
+
+    await #expect(throws: (any Error).self) {
+      _ = try await task.value
+    }
+    #expect(breaker.failures == 0)
+    #expect(breaker.successes == 0)
   }
 }

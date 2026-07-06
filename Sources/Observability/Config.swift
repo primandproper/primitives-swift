@@ -46,6 +46,20 @@ public struct ObservabilityConfig: Codable, Sendable {
   /// Native, zero-infrastructure defaults: OSLog + signposts.
   public static var `default`: ObservabilityConfig { .init() }
 
+  private enum CodingKeys: String, CodingKey {
+    case serviceName, logging, tracing, metrics
+  }
+
+  /// Lenient decode: any missing key falls back to its default (the Swift analogue of Go decoding to
+  /// zero values), so a partial Info.plist/JSON config still decodes.
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.serviceName = try c.decodeIfPresent(String.self, forKey: .serviceName) ?? "platform-swift"
+    self.logging = try c.decodeIfPresent(LoggingConfig.self, forKey: .logging) ?? .init()
+    self.tracing = try c.decodeIfPresent(TracingConfig.self, forKey: .tracing) ?? .init()
+    self.metrics = try c.decodeIfPresent(MetricsConfig.self, forKey: .metrics) ?? .init()
+  }
+
   /// Constructs the pillars described by this config. Pure and synchronous; the caller wires the
   /// result into its components.
   public func bootstrap() -> Pillars {
@@ -100,6 +114,18 @@ public struct LoggingConfig: Codable, Sendable {
     self.subsystem = subsystem
     self.category = category
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case provider, subsystem, category
+  }
+
+  /// Lenient decode: missing keys fall back to defaults.
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .osLog
+    self.subsystem = try c.decodeIfPresent(String.self, forKey: .subsystem)
+    self.category = try c.decodeIfPresent(String.self, forKey: .category) ?? "observability"
+  }
 }
 
 public struct TracingConfig: Codable, Sendable {
@@ -115,6 +141,17 @@ public struct TracingConfig: Codable, Sendable {
     self.provider = provider
     self.subsystem = subsystem
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case provider, subsystem
+  }
+
+  /// Lenient decode: missing keys fall back to defaults.
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .signpost
+    self.subsystem = try c.decodeIfPresent(String.self, forKey: .subsystem)
+  }
 }
 
 public struct MetricsConfig: Codable, Sendable {
@@ -127,5 +164,15 @@ public struct MetricsConfig: Codable, Sendable {
 
   public init(provider: Provider = .swiftMetrics) {
     self.provider = provider
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case provider
+  }
+
+  /// Lenient decode: missing keys fall back to defaults.
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.provider = try c.decodeIfPresent(Provider.self, forKey: .provider) ?? .swiftMetrics
   }
 }

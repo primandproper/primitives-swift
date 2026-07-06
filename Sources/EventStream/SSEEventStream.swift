@@ -42,6 +42,13 @@ public actor SSEEventStream: EventStream {
     bytes: Bytes, networkTask: URLSessionTask?, observer: any Observer
   ) where Bytes.Element == UInt8 {
     self.networkTask = networkTask
+    // Tear down the network task and read loop if the consumer abandons `events` (e.g. breaks out of
+    // its `for try await` without calling `close()`, or its consuming task is cancelled). Without this
+    // the pump keeps iterating bytes and the `URLSessionTask` stays live forever. The handler is
+    // `@Sendable` and non-isolated, so it hops back onto the actor via an unstructured `Task`.
+    continuation.onTermination = { [weak self] _ in
+      Task { await self?.close() }
+    }
     pumpTask = Task { [weak self] in
       await self?.pump(bytes: bytes, observer: observer)
     }

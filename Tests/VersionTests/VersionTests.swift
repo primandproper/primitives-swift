@@ -81,6 +81,26 @@ struct InfoJSONTests {
     #expect(json.contains("\"build_time\""))
   }
 
+  @Test("emits keys in stable, alphabetically sorted order")
+  func sortedKeyOrdering() throws {
+    let info = Info(
+      version: "v9.9.9", buildNumber: "9", commitHash: "deadbeef",
+      commitTime: "2026-03-03T00:00:00Z", buildTime: "2026-03-04T00:00:00Z")
+
+    let json = String(decoding: try info.jsonData(), as: UTF8.self)
+
+    // `.sortedKeys` orders keys alphabetically; verify the emitted positions follow suit.
+    let order = ["build_number", "build_time", "commit_hash", "commit_time", "version"]
+    let positions = try order.map { key -> String.Index in
+      let range = try #require(json.range(of: "\"\(key)\""))
+      return range.lowerBound
+    }
+    #expect(positions == positions.sorted())
+
+    // Ordering must also be deterministic across repeated encodes.
+    #expect(try info.jsonData() == info.jsonData())
+  }
+
   @Test("round-trips through Codable")
   func roundTrips() throws {
     let info = Info(
