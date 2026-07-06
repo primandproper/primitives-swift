@@ -1,24 +1,30 @@
 # platform-swift
 
-A Swift port of [`platform-go`](https://github.com/primandproper/platform-go)'s toolkit, starting
-with **observability**. Same conceptual API across languages, expressed idiomatically for Swift
-concurrency and iOS.
+A Swift port of [`platform-go`](https://github.com/primandproper/platform-go)'s toolkit — the same
+conceptual API across languages, expressed idiomatically for Swift concurrency and iOS. It ships as a
+set of **independent products** (25 libraries: observability, HTTP, event streams, crypto/auth,
+analytics, feature flags, LLM, in-app purchase, and more) that you adopt à la carte. The design rules
+are thin/native/no-third-party-SPM-SDK: URLSession + Codable, CryptoKit, StoreKit, UserNotifications,
+with protocol seams shaped so a native or vendor adapter can wrap later.
 
-The keystone is the **Observer / Operation** abstraction: a per-component bundle of a named logger
-and tracer, where `op.set(key, value)` records to **both** the active span and a trace-enriched
-logger at once. On Apple platforms it lights up Instruments (spans) and Console.app (logs) with zero
-infrastructure; point it at an OpenTelemetry collector when you want parity with your backend
-services.
+The keystone — and the deepest port — is **observability**. Its **Observer / Operation** abstraction is
+a per-component bundle of a named logger and tracer, where `op.set(key, value)` records to **both** the
+active span and a trace-enriched logger at once. On Apple platforms it lights up Instruments (spans) and
+Console.app (logs) with zero infrastructure. Most of this README documents that module in depth; for a
+per-module status of everything else see the [module table](#modules) below and
+[`PORT_PROGRESS.md`](PORT_PROGRESS.md).
 
 ## Requirements
 
 - Swift 6, iOS 16+ / macOS 13+
-- Depends on [swift-log](https://github.com/apple/swift-log) and
-  [swift-metrics](https://github.com/apple/swift-metrics)
+- No third-party SPM dependencies for the native path. The only external packages are
+  [swift-metrics](https://github.com/apple/swift-metrics) (used by the core `Observability` metrics
+  surface) and [swift-log](https://github.com/apple/swift-log) (used **only** by the optional
+  `ObservabilityLog` interop product). Every other product is Foundation/Apple-framework only.
 
 ## Installation
 
-Add the package to your `Package.swift`:
+Add the package once, then depend on just the products you need — each library is independent:
 
 ```swift
 dependencies: [
@@ -27,11 +33,15 @@ dependencies: [
 targets: [
     .target(name: "MyApp", dependencies: [
         .product(name: "Observability", package: "platform-swift"),
+        .product(name: "HTTPClient",    package: "platform-swift"),
+        .product(name: "Analytics",     package: "platform-swift"),
+        // …add any of the products in the module table below
     ]),
 ]
 ```
 
-Or in Xcode: **File ▸ Add Package Dependencies…** and select the `Observability` library.
+Or in Xcode: **File ▸ Add Package Dependencies…** and select the libraries you want. See the
+[module table](#modules) for the full product list.
 
 ## Concepts
 
@@ -165,7 +175,7 @@ pillars.metrics.timer("request.duration").recordNanoseconds(elapsed)
 
 ```swift
 var config = ObservabilityConfig(serviceName: "MyApp")
-config.logging.provider = .osLog       // .osLog (default) | .swiftLog | .noop
+config.logging.provider = .osLog       // .osLog (default) | .noop
 config.tracing.provider = .signpost    // .signpost (default) | .noop
 config.metrics.provider = .swiftMetrics // .swiftMetrics (default) | .noop
 let pillars = config.bootstrap()
@@ -173,18 +183,24 @@ let pillars = config.bootstrap()
 
 | Pillar | Default | Alternatives |
 |---|---|---|
-| Logging | `.osLog` (native `os.Logger`) | `.swiftLog` (bridge to an existing swift-log setup), `.noop` |
+| Logging | `.osLog` (native `os.Logger`) | `.noop`. For swift-log, use the `ObservabilityLog` product and construct `SwiftLogLogger` directly (no config case). |
 | Tracing | `.signpost` (Instruments) | `.noop` |
 | Metrics | `.swiftMetrics` | `.noop` |
 
 For tests or previews, skip config entirely: `Pillars.noop`.
 
-### OpenTelemetry (optional)
+### OpenTelemetry & trace propagation
 
-The `ObservabilityOTel` target will provide OTLP-exporting adapters and W3C `traceparent`
-inject/extract for outbound `URLSession` requests, so iOS traces/metrics land in the same stack as
-your Go services. It's a documented stub today — the OpenTelemetry-swift dependency is intentionally
-kept out of the core graph until those adapters land.
+W3C `traceparent`/`tracestate` inject/extract for outbound `URLSession` requests ships in **core
+`Observability`** (`W3CPropagation`) — it needs no OTel dependency, and `HTTPClient` uses it to
+propagate the active span across the client boundary, so distributed traces stay linked with your Go
+services.
+
+The `ObservabilityOTel` target is an **empty placeholder**: the OTLP *exporter* (shipping spans/metrics
+to an external collector) was deliberately dropped. The port's observability is native-first (os_log +
+Instruments + MetricKit), nothing is lost at the propagation layer, and the exporter is the one heavy
+dependency-bearing piece that cuts against the thin/native/no-dep rule. Revisit only if a concrete app
+needs a cloud OTel backend.
 
 ## Context propagation
 
@@ -289,12 +305,44 @@ make test-ios    # xcodebuild test on a simulator (override: IOS_SIM="iPhone 16 
 make clean
 ```
 
-## Status
+## Modules
 
-| Piece | State |
-|---|---|
-| Observer / Operation, Logger, Tracer, Metrics, Config, Keys | done |
-| OSLog + Signpost backends, noop, swift-log interop | done |
-| `RecordingObserver` + tests | done |
-| MetricKit diagnostics | minimal |
-| `ObservabilityOTel` (OTLP export, W3C propagation) | stub |
+Every product is independent; adopt them à la carte. Tiers follow
+[`PORT_PROGRESS.md`](PORT_PROGRESS.md), which records "what's real" and every deliberate deferral per
+module.
+
+**Legend** — 🟢 real backend / done · 🟡 real backend with a deferred second backend or documented gap ·
+⚪️ placeholder / deferred.
+
+| Product | Tier | State — what's real |
+|---|---|---|
+| `Observability` | deep port | 🟢 Observer/Operation, OSLog logger + signpost tracer + swift-metrics, noop, typed `AttributeValue`, W3C `traceparent` propagation, MetricKit diagnostics (minimal) |
+| `ObservabilityLog` | deep port | 🟢 `SwiftLogLogger` swift-log interop (split out so the native path is swift-log-free) |
+| `ObservabilityOTel` | placeholder | ⚪️ empty stub — OTLP exporter **dropped** (OBS-20); propagation lives in core instead |
+| `Bitmask` | pure-logic | 🟢 bitmask set ops, full Go parity |
+| `Numbers` | pure-logic | 🟢 numeric helpers + range clamping |
+| `Version` | pure-logic | 🟢 build/version info, JSON + text rendering |
+| `Identifiers` | pure-logic | 🟢 `XID` (Go xid wire-compatible, wrap-safe) |
+| `RandomKit` | pure-logic | 🟢 `SecRandomCopyBytes` generator, Base32, slice helpers; noop |
+| `APIErrors` | pure-logic | 🟢 `APIResponse` / `ErrorCode` types |
+| `Filtering` | pure-logic | 🟡 pagination / query-filter / RFC3339; `FromParams`/`ToPagination` **not ported** |
+| `Encoding` | pure-logic | 🟢 `ClientEncoder` + JSON encoder, content-type negotiation |
+| `Retry` | pure-logic | 🟢 exponential backoff (jitter/cap), `Retry-After` floor; noop |
+| `Cryptography` | native backend | 🟢 CryptoKit AES-GCM (Go-byte-compatible) + SHA-2/checksum hashers; no PASETO |
+| `Authentication` | native backend | 🟢 JWT verify, TOTP/HOTP (RFC 6238), Base32/Base64URL |
+| `Cookies` | native backend | 🟢 HMAC-SHA256 signed cookies (securecookie-compatible) |
+| `CompressionKit` | native backend | 🟡 Apple `lzfse`/`lz4`/`lzma`/`zlib`; `zstd`/`s2` decode-but-throw (no Go wire interop, CRY-20) |
+| `QRCodes` | native backend | 🟢 CoreImage QR + TOTP-URI QR; noop |
+| `CircuitBreaking` | native backend | 🟢 in-memory rolling-window breaker (clock-injectable) + keyed; noop |
+| `HTTPClient` | native backend | 🟢 URLSession client with Retry + CircuitBreaking, `traceparent` injection, failure metrics |
+| `EventStream` | native backend | 🟢 URLSession SSE (WHATWG reconnect, `Last-Event-ID`) + WebSocket (keepalive), bounded buffers; noop |
+| `Notifications` | native backend | 🟡 live `UNUserNotificationCenter` client seam + noop + mock; server-side push **send** is noop-by-design |
+| `Capitalism` | native backend | 🟡 live StoreKit 2 purchase manager + noop + mock; RevenueCat backend **deferred** |
+| `Analytics` | cloud transport | 🟢 Segment + PostHog URLSession reporters (buffer/flush, circuit breaker); noop + mock |
+| `FeatureFlags` | cloud transport | 🟡 live PostHog evaluator; LaunchDarkly **deferred** (mobile-key mismatch); noop + mock |
+| `LLM` | cloud transport | 🟡 Anthropic + OpenAI URLSession clients; **streaming deferred** (absent in Go too); noop + mock |
+
+Not yet ported (planned or intentionally skipped): `Cache` (Redis dropped, memory+disk planned),
+`Secrets`, `RateLimiting`, `Files`, `Fake`, `Embeddings`, `Uploads`, `Search`, `HealthCheck`; and the
+server-only **SKIP** list — email, messagequeue, routing, server, reflection, pointer, errors,
+distributedlock, artifacts. Full rationale in [`PORT_PROGRESS.md`](PORT_PROGRESS.md).
