@@ -10,6 +10,11 @@
 ///
 /// A handler left unset panics when its method is invoked, exactly like Go's generated mock ("mock out
 /// the CanUseFeature method"), so a test only has to stub what it actually exercises.
+///
+/// The handler closures are `let`, injected once at ``init``: under Swift 6 actor isolation a
+/// `public var` on an actor cannot be assigned from another isolation domain
+/// (`mock.canUseFeatureHandler = …` would be a cross-actor mutation error), so configuration happens at
+/// construction time — the shape the existing tests already use.
 public actor FeatureFlagManagerMock: FeatureFlagManager {
   public struct CanUseFeatureCall: Sendable, Equatable {
     public let feature: String
@@ -40,16 +45,16 @@ public actor FeatureFlagManagerMock: FeatureFlagManager {
     public let context: EvaluationContext
   }
 
-  public var canUseFeatureHandler: (@Sendable (String, EvaluationContext) async throws -> Bool)?
-  public var stringValueHandler:
+  private let canUseFeatureHandler: (@Sendable (String, EvaluationContext) async throws -> Bool)?
+  private let stringValueHandler:
     (@Sendable (String, String, EvaluationContext) async throws -> String)?
-  public var int64ValueHandler:
+  private let int64ValueHandler:
     (@Sendable (String, Int64, EvaluationContext) async throws -> Int64)?
-  public var float64ValueHandler:
+  private let float64ValueHandler:
     (@Sendable (String, Double, EvaluationContext) async throws -> Double)?
-  public var objectValueHandler:
+  private let objectValueHandler:
     (@Sendable (String, FlagValue, EvaluationContext) async throws -> FlagValue)?
-  public var closeHandler: (@Sendable () async throws -> Void)?
+  private let closeHandler: (@Sendable () async throws -> Void)?
 
   public private(set) var canUseFeatureCalls: [CanUseFeatureCall] = []
   public private(set) var stringValueCalls: [StringValueCall] = []

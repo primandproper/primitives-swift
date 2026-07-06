@@ -9,7 +9,7 @@ import os
 struct WebSocketEventStreamTests {
   @Test("start resumes the underlying connection")
   func startResumesConnection() async {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
 
@@ -20,7 +20,7 @@ struct WebSocketEventStreamTests {
 
   @Test("decodes an inbound JSON data frame as an Event")
   func decodesDataFrame() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -36,7 +36,7 @@ struct WebSocketEventStreamTests {
 
   @Test("decodes an inbound JSON text frame the same as a data frame")
   func decodesTextFrame() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -50,7 +50,7 @@ struct WebSocketEventStreamTests {
 
   @Test("skips an unparseable message and continues, mirroring Go's readLoop")
   func skipsMalformedMessages() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -65,7 +65,7 @@ struct WebSocketEventStreamTests {
 
   @Test("a transport failure from receive() finishes the stream by throwing")
   func transportFailureFinishesByThrowing() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -80,7 +80,7 @@ struct WebSocketEventStreamTests {
 
   @Test("send JSON-encodes the event and forwards it to the connection")
   func sendEncodesAndForwards() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -99,7 +99,7 @@ struct WebSocketEventStreamTests {
 
   @Test("send throws streamClosed after close, mirroring Go's post-Close Send error")
   func sendThrowsAfterClose() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     await stream.close()
@@ -113,7 +113,7 @@ struct WebSocketEventStreamTests {
     "close cancels the connection with .goingAway and finishes events",
     .timeLimit(.minutes(1)))
   func closeCancelsConnectionAndFinishesEvents() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
 
@@ -128,7 +128,7 @@ struct WebSocketEventStreamTests {
 
   @Test("close is idempotent")
   func closeIsIdempotent() async {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
 
@@ -143,7 +143,7 @@ struct WebSocketEventStreamTests {
     // Without an `onTermination` handler on `events`, cancelling the consuming task would leave the
     // receive loop awaiting frames and the socket live forever. onTermination hops to the actor and
     // runs close(), which cancels the connection with `.goingAway`.
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
 
@@ -161,7 +161,7 @@ struct WebSocketEventStreamTests {
 
   @Test("confirmHandshake succeeds when the initial ping is answered")
   func confirmHandshakeSucceeds() async throws {
-    let connection = FakeWebSocketConnection()  // defaults to answering pings with a pong
+    let connection = MockWebSocketConnection()  // defaults to answering pings with a pong
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -172,7 +172,7 @@ struct WebSocketEventStreamTests {
 
   @Test("confirmHandshake propagates a failed upgrade instead of deferring it to receive()")
   func confirmHandshakeFailurePropagates() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     connection.setPingResponse(.failure(URLError(.badServerResponse)))
     let stream = WebSocketEventStream(connection: connection)
     await stream.start(observer: recordingObserver("test"))
@@ -185,7 +185,7 @@ struct WebSocketEventStreamTests {
 
   @Test("the heartbeat sends pings on the configured interval", .timeLimit(.minutes(1)))
   func heartbeatSendsPings() async throws {
-    let connection = FakeWebSocketConnection()  // pings answered with a pong
+    let connection = MockWebSocketConnection()  // pings answered with a pong
     let config = WebSocketEventStreamConfig(heartbeatInterval: .milliseconds(20))
     let stream = WebSocketEventStream(connection: connection, config: config)
     await stream.start(observer: recordingObserver("test"))
@@ -201,7 +201,7 @@ struct WebSocketEventStreamTests {
 
   @Test("a pong timeout tears the connection down", .timeLimit(.minutes(1)))
   func pongTimeoutClosesConnection() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     connection.setPingResponse(.hang)  // ping is sent but no pong ever comes back
     let config = WebSocketEventStreamConfig(heartbeatInterval: .milliseconds(20))
     let stream = WebSocketEventStream(connection: connection, config: config)
@@ -218,7 +218,7 @@ struct WebSocketEventStreamTests {
 
   @Test("a zero heartbeat interval runs no heartbeat loop")
   func zeroHeartbeatIntervalDisablesLoop() async throws {
-    let connection = FakeWebSocketConnection()
+    let connection = MockWebSocketConnection()
     let stream = WebSocketEventStream(connection: connection)  // default config: interval .zero
     await stream.start(observer: recordingObserver("test"))
     defer { Task { await stream.close() } }
@@ -235,7 +235,7 @@ struct WebSocketEventStreamConnectorTests {
     let captured = OSAllocatedUnfairLock<URLRequest?>(initialState: nil)
     let connector = WebSocketEventStreamConnector(observer: recordingObserver("test")) { request in
       captured.withLock { $0 = request }
-      return FakeWebSocketConnection()
+      return MockWebSocketConnection()
     }
 
     let stream = try await connector.connect(
@@ -254,7 +254,7 @@ struct WebSocketEventStreamConnectorTests {
     let captured = OSAllocatedUnfairLock<URLRequest?>(initialState: nil)
     let connector = WebSocketEventStreamConnector(observer: recordingObserver("test")) { request in
       captured.withLock { $0 = request }
-      return FakeWebSocketConnection()
+      return MockWebSocketConnection()
     }
 
     let stream = try await connector.connect(to: URL(string: "wss://example.test/events")!)

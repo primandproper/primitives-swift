@@ -7,6 +7,11 @@
 /// optional handler closure per method, plus a recorded-calls list — but trades the panic-on-unset
 /// convention for a quieter default: an unset handler is simply a no-op. Thread safety comes from this
 /// being an `actor` rather than from hand-rolled locks.
+///
+/// The handler closures are `let`, injected once at ``init``: under Swift 6 actor isolation a
+/// `public var` on an actor cannot be assigned from another isolation domain (`mock.closeHandler = …`
+/// would be a cross-actor mutation error), so configuration happens at construction time — the shape
+/// the existing tests already use.
 public actor EventReporterMock: EventReporter {
   public struct AddUserCall: Sendable, Equatable {
     public let userID: String
@@ -25,11 +30,11 @@ public actor EventReporterMock: EventReporter {
     public let properties: [String: AnalyticsPropertyValue]
   }
 
-  public var closeHandler: (@Sendable () -> Void)?
-  public var addUserHandler: (@Sendable (String, [String: AnalyticsPropertyValue]) throws -> Void)?
-  public var eventOccurredHandler:
+  private let closeHandler: (@Sendable () -> Void)?
+  private let addUserHandler: (@Sendable (String, [String: AnalyticsPropertyValue]) throws -> Void)?
+  private let eventOccurredHandler:
     (@Sendable (String, String, [String: AnalyticsPropertyValue]) throws -> Void)?
-  public var eventOccurredAnonymousHandler:
+  private let eventOccurredAnonymousHandler:
     (@Sendable (String, String, [String: AnalyticsPropertyValue]) throws -> Void)?
 
   public private(set) var closeCallCount = 0

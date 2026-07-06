@@ -1,19 +1,18 @@
 import Foundation
 import os
 
-@testable import EventStream
-
-/// A fake ``WebSocketConnection`` a test drives directly, feeding it inbound messages and inspecting
-/// what ``WebSocketEventStream`` sent — the seam that lets ``WebSocketEventStream``'s state machine be
-/// unit-tested without a live socket (see ``WebSocketConnection``'s doc comment for why `URLProtocol`
-/// stubbing, which works for SSE, doesn't apply to WebSocket).
+/// A recording ``WebSocketConnection`` test double a test drives directly — feeding it inbound messages
+/// and inspecting what was sent — so ``WebSocketEventStream``'s state machine can be exercised without a
+/// live socket (see ``WebSocketConnection`` for why `URLProtocol` stubbing, which works for SSE, doesn't
+/// apply to WebSocket).
 ///
-/// A lock-backed class rather than an actor, matching `HTTPClientTests`' `AttemptCounter`/`TestBreaker`:
-/// ``resume()``/``cancel(with:reason:)`` must stay synchronous to satisfy ``WebSocketConnection``, and a
-/// lock avoids the "did the fire-and-forget Task run yet" race an actor would introduce for those calls.
-final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
-  /// How the fake answers a ``sendPing()``, letting a test drive the heartbeat's success/timeout paths.
-  enum PingResponse: Sendable {
+/// Promoted from the module's former private test fake per REPO-05 (every seam ships a Noop and a Mock).
+/// A lock-backed `final class` rather than an `actor`: ``resume()`` / ``cancel(with:reason:)`` must stay
+/// synchronous to satisfy ``WebSocketConnection``, and a lock avoids the "did the fire-and-forget Task
+/// run yet" race an actor would introduce for those calls.
+public final class MockWebSocketConnection: WebSocketConnection, @unchecked Sendable {
+  /// How the mock answers a ``sendPing()``, letting a test drive the heartbeat's success/timeout paths.
+  public enum PingResponse: Sendable {
     /// A pong comes back immediately (a live connection).
     case pong
     /// The ping itself fails (e.g. a failed handshake surfaced through the initial confirming ping).
@@ -36,20 +35,22 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
 
   private let state = OSAllocatedUnfairLock(initialState: State())
 
-  var resumeCallCount: Int { state.withLock { $0.resumeCallCount } }
-  var sentMessages: [URLSessionWebSocketTask.Message] { state.withLock { $0.sentMessages } }
-  var cancelledWith: URLSessionWebSocketTask.CloseCode? { state.withLock { $0.cancelledWith } }
-  var pingCallCount: Int { state.withLock { $0.pingCallCount } }
+  public var resumeCallCount: Int { state.withLock { $0.resumeCallCount } }
+  public var sentMessages: [URLSessionWebSocketTask.Message] { state.withLock { $0.sentMessages } }
+  public var cancelledWith: URLSessionWebSocketTask.CloseCode? { state.withLock { $0.cancelledWith } }
+  public var pingCallCount: Int { state.withLock { $0.pingCallCount } }
+
+  public init() {}
 
   /// Sets how the next ``sendPing()`` calls respond.
-  func setPingResponse(_ response: PingResponse) {
+  public func setPingResponse(_ response: PingResponse) {
     state.withLock { $0.pingResponse = response }
   }
 
   /// Queues a message (or failure) for the next ``receive()`` call to return, in FIFO order, waking any
   /// call already parked in ``receive()`` waiting for one. Continuations are resumed *after* releasing
   /// the lock, since `os_unfair_lock` isn't reentrant and a resumed waiter re-enters this same lock.
-  func enqueue(_ result: Result<URLSessionWebSocketTask.Message, any Error>) {
+  public func enqueue(_ result: Result<URLSessionWebSocketTask.Message, any Error>) {
     let pending = state.withLock { s -> [CheckedContinuation<Void, Never>] in
       s.inbox.append(result)
       let waiters = s.waiters
@@ -59,15 +60,15 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
     for waiter in pending { waiter.resume() }
   }
 
-  func resume() {
+  public func resume() {
     state.withLock { $0.resumeCallCount += 1 }
   }
 
-  func send(_ message: URLSessionWebSocketTask.Message) async throws {
+  public func send(_ message: URLSessionWebSocketTask.Message) async throws {
     state.withLock { $0.sentMessages.append(message) }
   }
 
-  func receive() async throws -> URLSessionWebSocketTask.Message {
+  public func receive() async throws -> URLSessionWebSocketTask.Message {
     while true {
       let next: Result<URLSessionWebSocketTask.Message, any Error>? = state.withLock { s in
         s.inbox.isEmpty ? nil : s.inbox.removeFirst()
@@ -81,7 +82,7 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
     }
   }
 
-  func sendPing() async throws {
+  public func sendPing() async throws {
     let response: PingResponse = state.withLock { s in
       s.pingCallCount += 1
       return s.pingResponse
@@ -114,7 +115,7 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
     }
   }
 
-  func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+  public func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
     state.withLock { $0.cancelledWith = closeCode }
   }
 }
