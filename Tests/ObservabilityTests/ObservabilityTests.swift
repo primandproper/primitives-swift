@@ -115,11 +115,11 @@ struct ConfigTests {
 
   @Test("config round-trips through Codable")
   func codableRoundTrip() throws {
-    let original = ObservabilityConfig(serviceName: "svc", logging: .init(provider: .swiftLog))
+    let original = ObservabilityConfig(serviceName: "svc", logging: .init(provider: .noop))
     let data = try JSONEncoder().encode(original)
     let decoded = try JSONDecoder().decode(ObservabilityConfig.self, from: data)
     #expect(decoded.serviceName == "svc")
-    #expect(decoded.logging.provider == .swiftLog)
+    #expect(decoded.logging.provider == .noop)
   }
 }
 

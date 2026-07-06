@@ -76,8 +76,6 @@ public struct ObservabilityConfig: Codable, Sendable {
     case .osLog:
       logger = OSLogLogger(
         subsystem: logging.subsystem ?? subsystem, category: logging.category, name: serviceName)
-    case .swiftLog:
-      logger = SwiftLogLogger(label: serviceName)
     case .noop:
       logger = NoopLogger()
     }
@@ -105,7 +103,6 @@ public struct ObservabilityConfig: Codable, Sendable {
 public struct LoggingConfig: Codable, Sendable {
   public enum Provider: String, Codable, Sendable {
     case osLog
-    case swiftLog
     case noop
   }
 

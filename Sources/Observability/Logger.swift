@@ -1,5 +1,4 @@
 import Foundation
-import Logging
 import os
 
 /// Structured logger, ported from platform-go's `logging.Logger`.
@@ -115,39 +114,8 @@ public struct OSLogLogger: Logger {
   }
 }
 
-// MARK: - swift-log interop
-
-/// Wraps a `swift-log` `Logging.Logger`, for apps already invested in the swift-log ecosystem. Fields
-/// flow through as real swift-log metadata; the backend is whatever `LoggingSystem.bootstrap` selected.
-public struct SwiftLogLogger: Logger {
-  private var backing: Logging.Logger
-
-  public init(label: String) {
-    self.backing = Logging.Logger(label: label)
-  }
-
-  private init(backing: Logging.Logger) {
-    self.backing = backing
-  }
-
-  public func info(_ message: String) { backing.info("\(message)") }
-  public func debug(_ message: String) { backing.debug("\(message)") }
-  public func error(_ whatWasHappening: String, _ error: Error) {
-    backing.error("\(whatWasHappening)", metadata: [Keys.error: "\(error)"])
-  }
-
-  public func withName(_ name: String) -> any Logger {
-    var copy = backing
-    copy[metadataKey: Keys.serviceName] = "\(name)"
-    return SwiftLogLogger(backing: copy)
-  }
-
-  public func withValue(_ key: String, _ value: AttributeValue) -> any Logger {
-    var copy = backing
-    copy[metadataKey: key] = "\(value.rendered)"
-    return SwiftLogLogger(backing: copy)
-  }
-}
+// The swift-log interop logger (`SwiftLogLogger`) lives in the separate `ObservabilityLog` target so
+// the core module carries no swift-log dependency when the native `.osLog` backend is used.
 
 // MARK: - Noop
 

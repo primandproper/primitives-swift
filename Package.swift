@@ -9,6 +9,7 @@ let package = Package(
   ],
   products: [
     .library(name: "Observability", targets: ["Observability"]),
+    .library(name: "ObservabilityLog", targets: ["ObservabilityLog"]),
     .library(name: "ObservabilityOTel", targets: ["ObservabilityOTel"]),
     .library(name: "Filtering", targets: ["Filtering"]),
     .library(name: "APIErrors", targets: ["APIErrors"]),
@@ -41,8 +42,15 @@ let package = Package(
     .target(
       name: "Observability",
       dependencies: [
-        .product(name: "Logging", package: "swift-log"),
         .product(name: "Metrics", package: "swift-metrics"),
+      ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "ObservabilityLog",
+      dependencies: [
+        "Observability",
+        .product(name: "Logging", package: "swift-log"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
@@ -54,6 +62,11 @@ let package = Package(
     .testTarget(
       name: "ObservabilityTests",
       dependencies: ["Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "ObservabilityLogTests",
+      dependencies: ["ObservabilityLog", "Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
