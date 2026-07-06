@@ -1,3 +1,5 @@
+import Foundation
+
 /// Executes an operation with retry logic, ported from platform-go's `retry.Policy` interface.
 ///
 /// Go's `Execute(ctx, func(ctx) error) error` becomes a generic `async throws` method: the operation is
@@ -36,8 +38,11 @@ public struct UnretryableError: Error {
 ///
 /// Go treats a canceled/expired `context.Context` and an `ErrUnretryable`-wrapped error as terminal. The
 /// Swift equivalents are `CancellationError` (thrown by `Task.checkCancellation()` / `Task.sleep` and,
-/// by convention, by cancellation-aware operations) and ``UnretryableError``. Neither can be resolved by
-/// waiting and trying again, so the loop returns immediately.
+/// by convention, by cancellation-aware operations) and ``UnretryableError``. A `URLSession` request torn
+/// down by task cancellation surfaces the cancellation as `URLError.cancelled` rather than
+/// `CancellationError` (see `HTTPClient`, which deliberately leaves it unwrapped for this check), so that
+/// too is terminal. None can be resolved by waiting and trying again, so the loop returns immediately.
 func isTerminal(_ error: any Error) -> Bool {
   error is CancellationError || error is UnretryableError
+    || (error as? URLError)?.code == .cancelled
 }

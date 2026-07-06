@@ -14,9 +14,9 @@ struct PartitionedCircuitBreakerTests {
     let keyed = PartitionedCircuitBreaker(global: global, breakers: ["123": dedicated])
 
     // Actors are reference types, so identity distinguishes the dedicated breaker from the shared one.
-    #expect(keyed.breaker(for: "123") as? StandardCircuitBreaker === dedicated)
-    #expect(keyed.breaker(for: "456") as? StandardCircuitBreaker === global)
-    #expect(keyed.breaker(for: "789") as? StandardCircuitBreaker === global)
+    #expect(keyed.breaker(for: "123") as? StandardCircuitBreaker<ContinuousClock> === dedicated)
+    #expect(keyed.breaker(for: "456") as? StandardCircuitBreaker<ContinuousClock> === global)
+    #expect(keyed.breaker(for: "789") as? StandardCircuitBreaker<ContinuousClock> === global)
   }
 
   @Test("with no registered breakers every key falls back to the global one")
@@ -32,7 +32,8 @@ struct PartitionedCircuitBreakerTests {
   @Test("breaks one key in isolation")
   func breaksInIsolation() async {
     let broken = StandardCircuitBreaker(
-      name: "broken", errorRatePercentage: 50, minimumSampleThreshold: 1, resetTimeout: .seconds(60))
+      name: "broken", errorRatePercentage: 50, minimumSampleThreshold: 1, resetTimeout: .seconds(60)
+    )
     await broken.recordFailure()  // trips the heavy tenant's breaker
 
     let global = StandardCircuitBreaker(

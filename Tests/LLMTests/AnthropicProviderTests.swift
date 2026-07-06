@@ -45,7 +45,8 @@ struct AnthropicProviderTests {
     #expect(result.content == "one two")
   }
 
-  @Test("the request hits /v1/messages with the x-api-key + anthropic-version headers and max_tokens")
+  @Test(
+    "the request hits /v1/messages with the x-api-key + anthropic-version headers and max_tokens")
   func requestShapeAndHeaders() async throws {
     let (provider, host, captured) = makeStubbedAnthropic()
     LLMStubURLProtocol.register(host: host) { request in
@@ -122,7 +123,8 @@ struct AnthropicProviderTests {
     defer { LLMStubURLProtocol.unregister(host) }
 
     await #expect(throws: LLMError.rateLimit(retryAfter: 12)) {
-      try await provider.completion(CompletionParams(messages: [Message(role: .user, content: "x")]))
+      try await provider.completion(
+        CompletionParams(messages: [Message(role: .user, content: "x")]))
     }
   }
 }

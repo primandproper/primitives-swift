@@ -7,8 +7,9 @@ import Foundation
 /// port's settled conventions, only the JSON contract survives, with both coding keys preserved so a
 /// Go-authored config still decodes.
 ///
-/// This config is fully faithful — only the reporter it configures
-/// (``SourceConfig/provideCollector()``) gets the salsa20 treatment, since PostHog has no iOS SDK.
+/// This config drives a real ``PostHogEventReporter``: a thin URLSession + Codable upload to PostHog's
+/// `POST {endpoint}/batch` HTTP API. PostHog *does* ship a first-party Swift SDK — the port reimplements
+/// the batch call directly only because of this port's no-vendor-SDK policy, not for lack of one.
 public struct PostHogConfig: Codable, Sendable, Equatable {
   public var apiKey: String
 

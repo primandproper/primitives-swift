@@ -142,3 +142,60 @@ struct NoopQRCodeBuilderTests {
     #expect(result.isEmpty)
   }
 }
+
+@Suite("MockQRCodeBuilder")
+struct MockQRCodeBuilderTests {
+  @Test("records each call in order and returns empty content when unscripted")
+  func recordsCalls() throws {
+    let mock = MockQRCodeBuilder()
+
+    let first = try mock.buildQRCode(username: "alice", twoFactorSecret: "S1")
+    let second = try mock.buildQRCode(username: "bob", twoFactorSecret: "S2")
+
+    #expect(first.isEmpty)
+    #expect(second.isEmpty)
+    #expect(mock.callCount == 2)
+    #expect(
+      mock.calls == [
+        .init(username: "alice", twoFactorSecret: "S1"),
+        .init(username: "bob", twoFactorSecret: "S2"),
+      ])
+  }
+
+  @Test("a scripted success handler returns the given value")
+  func scriptedSuccess() throws {
+    let mock = MockQRCodeBuilder { username, _ in .success("data:image/png;base64,\(username)") }
+
+    let result = try mock.buildQRCode(username: "carol", twoFactorSecret: "S")
+
+    #expect(result == "data:image/png;base64,carol")
+    #expect(mock.calls.first?.twoFactorSecret == "S")
+  }
+
+  @Test("a scripted failure rethrows the typed QRCodeError")
+  func scriptedFailure() {
+    let mock = MockQRCodeBuilder { _, _ in .failure(.encodingFailed) }
+
+    #expect(throws: QRCodeError.encodingFailed) {
+      _ = try mock.buildQRCode(username: "dave", twoFactorSecret: "S")
+    }
+    // The failing call is still recorded.
+    #expect(mock.callCount == 1)
+  }
+
+  @Test("setHandler reconfigures the scripted outcome after construction")
+  func setHandlerReconfigures() throws {
+    let mock = MockQRCodeBuilder()
+    mock.setHandler { _, _ in .success("first") }
+    #expect(try mock.buildQRCode(username: "u", twoFactorSecret: "s") == "first")
+
+    mock.setHandler { _, _ in .success("second") }
+    #expect(try mock.buildQRCode(username: "u", twoFactorSecret: "s") == "second")
+  }
+
+  @Test("drops in wherever a QRCodeBuilder is required")
+  func conformsToProtocol() throws {
+    let builder: any QRCodeBuilder = MockQRCodeBuilder { _, _ in .success("ok") }
+    #expect(try builder.buildQRCode(username: "u", twoFactorSecret: "s") == "ok")
+  }
+}

@@ -17,6 +17,15 @@ public actor LLMProviderMock: LLMProvider {
     self.completionHandler = completionHandler
   }
 
+  /// (Re)configures the handler after construction. `completionHandler` is a `public var` on an actor,
+  /// so it can't be assigned from outside (`mock.completionHandler = …` is rejected under Swift 6
+  /// actor isolation); this async mutator is the supported way to script the double post-init (REPO-05).
+  public func setCompletionHandler(
+    _ handler: (@Sendable (CompletionParams) async throws -> CompletionResult)?
+  ) {
+    completionHandler = handler
+  }
+
   public func completion(_ params: CompletionParams) async throws -> CompletionResult {
     completionCalls.append(params)
     if let completionHandler {

@@ -7,6 +7,11 @@ import Foundation
 /// JSON and URL representations both use straight, semantically-correct keys (`createdAfter` carries
 /// the created-after bound, etc.). The hand-written `Codable` exists only to (de)serialize the time
 /// fields as RFC3339 strings; the key names match the property names.
+///
+/// Two Go server-side helpers are deliberately dropped: `ExtractQueryFilterFromRequest`/`FromParams`
+/// (parse an inbound `*url.Values`/request into a filter) and the filter-to-`Pagination` seeding
+/// (`ToPagination`). A client only *emits* queries (see ``queryItems()``) and *reads* server-issued
+/// ``Pagination``; it never parses inbound requests nor mints pagination, so neither has an iOS analogue.
 public struct QueryFilter: Codable, Sendable, Equatable {
   /// Maximum page size the backend honors; larger requests are clamped server-side. (Go `MaxQueryFilterLimit`.)
   public static let maxLimit: UInt8 = 250
@@ -50,14 +55,15 @@ public struct QueryFilter: Codable, Sendable, Equatable {
   }
 
   /// The URL query items for a list request, the client-side analogue of Go's `ToValues()`. Only
-  /// non-nil fields are emitted; keys and formats mirror the Go `QueryKey*` constants exactly (the
-  /// URL path is **not** affected by the JSON-tag swap described above). Dates use RFC3339 with
-  /// fractional seconds.
+  /// non-nil fields are emitted; keys and formats mirror the Go `QueryKey*` constants exactly. A
+  /// `maxResponseSize` above ``maxLimit`` is clamped down to it here, matching Go's `ToValues`, which
+  /// caps `limit` at `MaxQueryFilterLimit` so a client never asks for a page the backend won't serve.
+  /// Dates use RFC3339 with fractional seconds.
   public func queryItems() -> [URLQueryItem] {
     var items: [URLQueryItem] = []
     if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
     if let maxResponseSize {
-      items.append(URLQueryItem(name: "limit", value: String(maxResponseSize)))
+      items.append(URLQueryItem(name: "limit", value: String(min(maxResponseSize, Self.maxLimit))))
     }
     if let sortBy { items.append(URLQueryItem(name: "sortBy", value: sortBy.rawValue)) }
     if let createdBefore {

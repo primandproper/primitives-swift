@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// Configuration for an ``HTTPClient``, ported from platform-go's `httpclient.Config`.
@@ -19,6 +20,13 @@ import Foundation
 /// for a global idle-connection ceiling. See ``buildSessionConfiguration()``.
 public struct HTTPClientConfig: Codable, Sendable, Equatable {
   /// Request timeout. Maps to `URLSessionConfiguration.timeoutIntervalForRequest`.
+  ///
+  /// **Semantics differ from Go's.** `timeoutIntervalForRequest` is URLSession's *inter-byte idle*
+  /// timeout — the clock resets whenever new data arrives, so it bounds the gap *between* bytes, not the
+  /// total request. Go's `http.Client.Timeout`, by contrast, is a hard ceiling on the *whole* exchange
+  /// (dial + write + read). The nearest total-time bound in URLSession is `timeoutIntervalForResource`,
+  /// which ``buildSessionConfiguration()`` derives from this value (3×). So a request that dribbles bytes
+  /// forever is cut off by the resource timeout, not this one.
   public var timeout: Duration
   /// Process-wide idle-connection cap in Go. **No `URLSession` analogue** — retained for wire-compat.
   public var maxIdleConns: Int
@@ -29,6 +37,14 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
   /// ``HTTPClient/init(config:pillars:retryPolicy:circuitBreaker:)`` convenience swaps in a no-op
   /// tracer so spans are suppressed while logging/metrics stay on. See that initializer.
   public var enableTracing: Bool
+  /// Whether URLSession should *wait* for connectivity instead of failing immediately when the network is
+  /// unreachable. Maps to `URLSessionConfiguration.waitsForConnectivity`.
+  ///
+  /// **Defaults to `false`** to match Go's `http.Client`, which has no wait-for-connectivity behavior — an
+  /// offline request fails fast rather than parking until a route appears. This is also URLSession's own
+  /// default, so the conservative choice keeps parity on both sides. Set `true` for apps that prefer to
+  /// let a request ride out a transient connectivity gap (bounded by `timeoutIntervalForResource`).
+  public var waitsForConnectivity: Bool
 
   static let defaultTimeout: Duration = .seconds(10)
   static let defaultMaxIdleConns = 100
@@ -38,12 +54,14 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     timeout: Duration = .zero,
     maxIdleConns: Int = 0,
     maxIdleConnsPerHost: Int = 0,
-    enableTracing: Bool = false
+    enableTracing: Bool = false,
+    waitsForConnectivity: Bool = false
   ) {
     self.timeout = timeout
     self.maxIdleConns = maxIdleConns
     self.maxIdleConnsPerHost = maxIdleConnsPerHost
     self.enableTracing = enableTracing
+    self.waitsForConnectivity = waitsForConnectivity
   }
 
   /// Fills defaults for zero fields, mirroring Go's `Config.EnsureDefaults`.
@@ -93,6 +111,7 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     // URLSession knob is the resource timeout, which we scale the same way (3× the request timeout).
     sessionConfig.timeoutIntervalForResource = (cfg.timeout * 3).timeInterval
     sessionConfig.httpMaximumConnectionsPerHost = cfg.maxIdleConnsPerHost
+    sessionConfig.waitsForConnectivity = cfg.waitsForConnectivity
     return sessionConfig
   }
 
@@ -108,6 +127,7 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     case maxIdleConns
     case maxIdleConnsPerHost
     case enableTracing
+    case waitsForConnectivity
   }
 
   public init(from decoder: any Decoder) throws {
@@ -118,6 +138,7 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     maxIdleConns = try c.decodeIfPresent(Int.self, forKey: .maxIdleConns) ?? 0
     maxIdleConnsPerHost = try c.decodeIfPresent(Int.self, forKey: .maxIdleConnsPerHost) ?? 0
     enableTracing = try c.decodeIfPresent(Bool.self, forKey: .enableTracing) ?? false
+    waitsForConnectivity = try c.decodeIfPresent(Bool.self, forKey: .waitsForConnectivity) ?? false
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -126,23 +147,6 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     try c.encode(maxIdleConns, forKey: .maxIdleConns)
     try c.encode(maxIdleConnsPerHost, forKey: .maxIdleConnsPerHost)
     try c.encode(enableTracing, forKey: .enableTracing)
-  }
-}
-
-extension Duration {
-  /// This duration as a whole count of nanoseconds — the unit Go's `time.Duration` uses natively and
-  /// marshals to JSON. Truncates any sub-nanosecond resolution.
-  ///
-  /// `Retry` defines an identical helper for its own config; it lives `internal` there, so this module
-  /// carries its own copy rather than reaching across a target boundary for a two-line conversion.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
-  }
-
-  /// This duration as `TimeInterval` (seconds), the unit `URLSessionConfiguration` timeouts expect.
-  var timeInterval: TimeInterval {
-    let (seconds, attoseconds) = components
-    return Double(seconds) + Double(attoseconds) / 1e18
+    try c.encode(waitsForConnectivity, forKey: .waitsForConnectivity)
   }
 }

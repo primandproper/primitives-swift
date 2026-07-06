@@ -1,4 +1,5 @@
 import Foundation
+import Observability
 
 /// Delegates events to per-source ``EventReporter``s, ported from platform-go's
 /// `multisource.MultiSourceEventReporter` (`analytics/multisource/reporter.go`).
@@ -14,15 +15,28 @@ public struct MultiSourceEventReporter: Sendable {
   public static let sourcePropertyKey = "source"
 
   private let reporters: [String: any EventReporter]
+  private let observer: any Observer
 
-  public init(reporters: [String: any EventReporter] = [:]) {
+  public init(
+    reporters: [String: any EventReporter] = [:],
+    observer: any Observer = defaultAnalyticsObserver(name: "multisource_event_reporter")
+  ) {
     self.reporters = reporters
+    self.observer = observer
   }
 
   /// The reporter for `source`, or ``NoopEventReporter`` if unknown/unconfigured. Mirrors Go's
-  /// unexported `getReporter`.
+  /// unexported `getReporter`, including its log line on the noop fallback so an unrouted source is
+  /// diagnosable rather than silently dropped.
   private func reporter(for source: String) -> any EventReporter {
-    reporters[source] ?? NoopEventReporter()
+    if let reporter = reporters[source] {
+      return reporter
+    }
+    observer.logger
+      .withValue("source", source)
+      .withValue("known_sources", knownSources)
+      .info("no analytics reporter configured for source, using noop")
+    return NoopEventReporter()
   }
 
   /// The configured source names, mirroring Go's unexported `knownSources` (exposed here since it's
@@ -86,16 +100,17 @@ public struct MultiSourceEventReporter: Sendable {
 extension MultiSourceEventReporter {
   /// Builds a ``MultiSourceEventReporter`` from proxy sources config, ported from Go's
   /// `ProvideMultiSourceEventReporter`. For each source, attempts to build an ``EventReporter`` via
-  /// `makeReporter` (defaulting to ``SourceConfig/provideCollector()``); if that throws — e.g. missing
-  /// credentials, or (today, always, since neither ships an iOS SDK) a recognized Segment/PostHog
-  /// provider — the source falls back to ``NoopEventReporter``, exactly like the Go original.
+  /// `makeReporter` (defaulting to ``SourceConfig/provideCollector(session:observer:metrics:)``); if that
+  /// throws — e.g. missing/empty credentials — the source falls back to ``NoopEventReporter``, exactly
+  /// like the Go original.
   ///
   /// For PostHog, reporters are deduplicated by API key: sources sharing the same key reuse a single
   /// reporter instance (the source property still distinguishes their events), while sources with
   /// distinct keys each get their own. `makeReporter` is injectable so this dedup/fallback behavior is
-  /// testable independent of whether a real backend exists yet.
+  /// testable with a stubbed transport (or none at all).
   public init(
     proxySources: [String: SourceConfig],
+    observer: any Observer = defaultAnalyticsObserver(name: "multisource_event_reporter"),
     makeReporter: (SourceConfig) throws -> any EventReporter = { try $0.provideCollector() }
   ) {
     var reporters: [String: any EventReporter] = [:]
@@ -124,6 +139,6 @@ extension MultiSourceEventReporter {
       }
     }
 
-    self.init(reporters: reporters)
+    self.init(reporters: reporters, observer: observer)
   }
 }

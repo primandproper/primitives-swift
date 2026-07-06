@@ -1,0 +1,36 @@
+---
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+name: coverage
+jobs:
+  coverage:
+    timeout-minutes: 45
+    runs-on: macos-15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Run tests with coverage
+        run: make coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.lcov
+          # Tolerate a missing token (e.g. PRs from forks): report but never
+          # fail the job on upload problems.
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

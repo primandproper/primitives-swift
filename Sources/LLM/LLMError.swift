@@ -31,9 +31,6 @@ public enum LLMError: Error, Equatable, Sendable {
   case provider(status: Int, message: String)
   /// A 2xx response whose body couldn't be decoded into the expected shape. Carries a short reason.
   case malformedResponse(String)
-  /// The configured provider string is recognized but unavailable on this platform. Kept for symmetry
-  /// with the rest of the port's salsa20-treated factories, though both real providers here are live.
-  case unsupportedProvider(String)
 
   public var description: String {
     switch self {
@@ -47,7 +44,6 @@ public enum LLMError: Error, Equatable, Sendable {
     case .invalidRequest(let message): return "invalid llm request: \(message)"
     case .provider(let status, let message): return "llm provider error (\(status)): \(message)"
     case .malformedResponse(let reason): return "malformed llm response: \(reason)"
-    case .unsupportedProvider(let provider): return "unsupported llm provider: \(provider)"
     }
   }
 }
@@ -69,13 +65,14 @@ extension LLMError {
     case 404:
       return .modelNotFound(model)
     case 429:
-      return .rateLimit(retryAfter: retryAfterHeader.flatMap(TimeInterval.init))
+      return .rateLimit(retryAfter: parseRetryAfter(retryAfterHeader))
     case 400:
       // any-llm splits 400 into ErrModelNotFound / ErrContextLength / ErrInvalidRequest by inspecting the
       // provider's error `code`/`type`; without that structured field we route on the message text and
       // otherwise fall through to the general invalid-request case.
       let lowered = message.lowercased()
-      if lowered.contains("model") && (lowered.contains("not found") || lowered.contains("does not exist"))
+      if lowered.contains("model")
+        && (lowered.contains("not found") || lowered.contains("does not exist"))
       {
         return .modelNotFound(model)
       }
@@ -84,4 +81,31 @@ extension LLMError {
       return .provider(status: status, message: message)
     }
   }
+
+  /// Parses a `Retry-After` header into a delay in seconds, honoring **both** RFC 7231 forms — a
+  /// *delta-seconds* integer (`Retry-After: 30`) and an *HTTP-date* (`Retry-After: Wed, 21 Oct 2015
+  /// 07:28:00 GMT`), the latter measured from `now`. Previously only the numeric form was handled, so a
+  /// date-form header silently dropped the hint; this closes that gap to match ``HTTPClient``'s parser.
+  /// Returns `nil` when the header is absent or unparseable; a past date or non-positive count yields `0`.
+  static func parseRetryAfter(_ header: String?, now: Date = Date()) -> TimeInterval? {
+    guard let raw = header?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+
+    if let seconds = TimeInterval(raw) {
+      return max(0, seconds)
+    }
+    if let date = httpDateFormatter.date(from: raw) {
+      return max(0, date.timeIntervalSince(now))
+    }
+    return nil
+  }
+
+  /// RFC 7231 IMF-fixdate formatter (`en_US_POSIX`, GMT), mirroring ``HTTPClient``'s. Held as a shared
+  /// `static let` rather than rebuilt on every rate-limited response.
+  private static let httpDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "GMT")
+    formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+    return formatter
+  }()
 }

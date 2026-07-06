@@ -8,12 +8,33 @@ import Foundation
 /// module to `Cryptography` (which itself prefers reaching for primitives directly), we keep a small
 /// self-contained codec here — the module stays decoupled and depends only on system frameworks.
 enum Base64URLNoPad {
+  /// Decodes unpadded base64url, returning `nil` on any byte outside the URL-safe alphabet.
+  ///
+  /// **Strict (RFC 7515 §2 / Go's `base64.RawURLEncoding`).** Only `A–Z a–z 0–9 - _` are accepted. A
+  /// standard-alphabet `+`/`/`, *any* `=` (this encoding is unpadded — even trailing padding is
+  /// invalid), or whitespace is rejected. The previous `replacingOccurrences` path passed a stray `+`
+  /// or `/` straight through to Foundation's standard-alphabet decoder, accepting JWS segments RFC 7515
+  /// and Go reject; this validates the alphabet up front instead.
   static func decode(_ string: String) -> Data? {
-    var s =
-      string
-      .replacingOccurrences(of: "-", with: "+")
-      .replacingOccurrences(of: "_", with: "/")
-    // Restore the padding Foundation's decoder requires.
+    var s = ""
+    s.reserveCapacity(string.utf8.count)
+    for byte in string.utf8 {
+      switch byte {
+      case UInt8(ascii: "A")...UInt8(ascii: "Z"),
+        UInt8(ascii: "a")...UInt8(ascii: "z"),
+        UInt8(ascii: "0")...UInt8(ascii: "9"):
+        s.unicodeScalars.append(UnicodeScalar(byte))
+      case UInt8(ascii: "-"):
+        s.append("+")
+      case UInt8(ascii: "_"):
+        s.append("/")
+      default:
+        // `+`, `/`, `=`, whitespace, or anything else: not in RawURLEncoding's alphabet.
+        return nil
+      }
+    }
+    // Restore the padding Foundation's (padded) decoder requires. A remainder of 1 is impossible for
+    // real base64url and produces an invalid `"X==="`-style tail that Foundation then rejects.
     let remainder = s.count % 4
     if remainder != 0 {
       s += String(repeating: "=", count: 4 - remainder)

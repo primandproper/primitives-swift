@@ -17,7 +17,8 @@ final class LLMStubURLProtocol: URLProtocol, @unchecked Sendable {
   private static let registry =
     OSAllocatedUnfairLock<[String: @Sendable (URLRequest) -> LLMStubOutcome]>(initialState: [:])
 
-  static func register(host: String, _ handler: @escaping @Sendable (URLRequest) -> LLMStubOutcome) {
+  static func register(host: String, _ handler: @escaping @Sendable (URLRequest) -> LLMStubOutcome)
+  {
     registry.withLock { $0[host] = handler }
   }
 
@@ -38,13 +39,13 @@ final class LLMStubURLProtocol: URLProtocol, @unchecked Sendable {
       return
     }
     switch handler(request) {
-    case let .respond(status, body, headers):
+    case .respond(let status, let body, let headers):
       let response = HTTPURLResponse(
         url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: body)
       client?.urlProtocolDidFinishLoading(self)
-    case let .fail(error):
+    case .fail(let error):
       client?.urlProtocol(self, didFailWithError: error)
     }
   }
@@ -82,7 +83,12 @@ func llmRequestBody(_ request: URLRequest) -> Data {
 /// A thread-safe call counter, used to prove a provider makes exactly one request (no internal retry).
 final class OSCounter: @unchecked Sendable {
   private let state = OSAllocatedUnfairLock(initialState: 0)
-  @discardableResult func increment() -> Int { state.withLock { $0 += 1; return $0 } }
+  @discardableResult func increment() -> Int {
+    state.withLock {
+      $0 += 1
+      return $0
+    }
+  }
   var value: Int { state.withLock { $0 } }
 }
 

@@ -37,7 +37,9 @@ struct FeatureFlagManagerMockTests {
 
   @Test("stringValue invokes the configured handler and records the call")
   func stringValue() async throws {
-    let mock = FeatureFlagManagerMock(stringValue: { _, defaultValue, _ in "resolved-" + defaultValue })
+    let mock = FeatureFlagManagerMock(stringValue: { _, defaultValue, _ in
+      "resolved-" + defaultValue
+    })
 
     let result = try await mock.stringValue(
       for: "string-flag", default: "fallback", context: evalContext())

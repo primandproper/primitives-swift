@@ -1,3 +1,5 @@
+import Foundation
+
 /// Tracks failures and successes to decide whether an operation should proceed — ported from
 /// platform-go's `circuitbreaking.CircuitBreaker` interface.
 ///
@@ -51,8 +53,10 @@ extension CircuitBreaker {
   ///
   /// **Cancellation is not a service failure.** A `CancellationError` (the task was cancelled, not the
   /// dependency misbehaving) is rethrown *without* being counted against the breaker — counting it
-  /// would let a burst of user-cancelled requests trip a perfectly healthy circuit. This matches the
-  /// `Retry` module, which likewise treats cancellation as terminal-but-not-the-dependency's-fault.
+  /// would let a burst of user-cancelled requests trip a perfectly healthy circuit. A cancelled
+  /// `URLSession` request surfaces as `URLError.cancelled` rather than `CancellationError`, so it is
+  /// treated the same way here — consistent with how `HTTPClient` classifies cancellation. This matches
+  /// the `Retry` module, which likewise treats cancellation as terminal-but-not-the-dependency's-fault.
   public func execute<T: Sendable>(_ operation: @Sendable () async throws -> T) async throws -> T {
     guard await canProceed() else {
       throw CircuitOpenError()
@@ -62,9 +66,12 @@ extension CircuitBreaker {
       let result = try await operation()
       await recordSuccess()
       return result
-    } catch is CancellationError {
-      throw CancellationError()
     } catch {
+      // A cancelled request (task cancellation or a cancelled URLSession task) is not the dependency's
+      // fault: rethrow it without recording a breaker failure.
+      if error is CancellationError || (error as? URLError)?.code == .cancelled {
+        throw error
+      }
       await recordFailure()
       throw error
     }

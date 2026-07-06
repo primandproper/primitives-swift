@@ -1,3 +1,5 @@
+import DurationWire
+
 /// Configuration for a retry policy, ported from platform-go's `retry.Config`.
 ///
 /// Go tags each field with `env:` (read from the environment) and `json:`. Per the settled port
@@ -97,19 +99,5 @@ public struct RetryConfig: Codable, Sendable, Equatable {
     try c.encode(maxDelay.wholeNanoseconds, forKey: .maxDelay)
     try c.encode(multiplier, forKey: .multiplier)
     try c.encode(useJitter, forKey: .useJitter)
-  }
-}
-
-extension Duration {
-  /// This duration as a whole count of nanoseconds, truncating any finer (sub-nanosecond) resolution —
-  /// the unit Go's `time.Duration` uses natively.
-  ///
-  /// Used both for the JSON contract (Go marshals durations as integer nanoseconds) and for the backoff
-  /// math in ``ExponentialBackoffPolicy``, which — like Go — computes jitter and scaling in `int64`
-  /// nanoseconds. This is why a sub-2ns delay halves to zero and the jitter step is skipped: the
-  /// nanosecond truncation here reproduces Go's `int64(delay)/2 == 0` guard exactly.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
   }
 }

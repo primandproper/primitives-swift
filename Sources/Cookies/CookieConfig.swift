@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// The resolved SameSite mode, ported from the `SameSiteLax`/`SameSiteStrict`/`SameSiteNone` string
@@ -144,12 +145,6 @@ public struct CookieConfig: Codable, Sendable, Equatable {
 }
 
 extension Duration {
-  /// This duration as a whole count of nanoseconds — the unit Go's `time.Duration` marshals to JSON.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
-  }
-
   /// This duration as a whole count of seconds, truncating any finer resolution — used for the
   /// signed-cookie `MaxAge` bound and the `HTTPCookie` expiry, matching Go's `int(lifetime.Seconds())`.
   var wholeSeconds: Int64 {

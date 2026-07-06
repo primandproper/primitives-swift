@@ -17,6 +17,14 @@ public enum EventStreamError: Error, Equatable, Sendable, CustomStringConvertibl
   /// `config.ProvideBidirectionalEventStreamUpgrader`'s "SSE does not support bidirectional event
   /// streams" error. SSE is the only such provider today.
   case bidirectionalUnsupported(provider: EventStreamProvider)
+  /// A 2xx SSE response arrived with a `Content-Type` that isn't `text/event-stream` (e.g. an HTML error
+  /// page served with a 200). Per the [SSE spec](https://html.spec.whatwg.org/multipage/server-sent-events.html#sse-processing-model),
+  /// the client must verify the MIME type and fail the connection otherwise, rather than parse the body
+  /// as an event stream and silently observe nothing. Carries the received value (`nil` if absent).
+  case invalidContentType(received: String?)
+  /// A WebSocket heartbeat ping was sent but no pong arrived within the timeout window, so the connection
+  /// is treated as dead. Mirrors the intent of Go's server-side `heartbeatInterval` liveness check.
+  case pongTimeout
 
   public var description: String {
     switch self {
@@ -30,6 +38,10 @@ public enum EventStreamError: Error, Equatable, Sendable, CustomStringConvertibl
       return "invalid event stream config: \(reason)"
     case .bidirectionalUnsupported(let provider):
       return "\(provider.rawValue) does not support bidirectional event streams"
+    case .invalidContentType(let received):
+      return "expected Content-Type text/event-stream, got \(received ?? "none")"
+    case .pongTimeout:
+      return "websocket pong not received within the heartbeat interval"
     }
   }
 }

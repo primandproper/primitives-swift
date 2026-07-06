@@ -79,7 +79,9 @@ struct EventStreamConfigTests {
   @Test("an unrecognized provider string fails to decode")
   func unrecognizedProviderFailsDecode() {
     let data = Data(#"{"provider":"carrier-pigeon"}"#.utf8)
-    #expect(throws: (any Error).self) { try JSONDecoder().decode(EventStreamConfig.self, from: data) }
+    #expect(throws: (any Error).self) {
+      try JSONDecoder().decode(EventStreamConfig.self, from: data)
+    }
   }
 }
 

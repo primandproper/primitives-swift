@@ -113,6 +113,17 @@ struct TOTPVerificationTests {
     #expect(try totp.isValid(code: "1234567", secret: exampleSecret, at: date(59)) == false)
   }
 
+  @Test("a pre-1970 reference date does not trap (clamps to the epoch window)")
+  func preEpochDateDoesNotCrash() throws {
+    // Regression for CRY-01: a negative Unix time would trap `UInt64(Double)`. The counter clamps to
+    // 0, so a pre-epoch date generates the same code as the epoch and never crashes.
+    let epochCode = try totp.generate(secret: exampleSecret, at: date(0))
+    #expect(try totp.generate(secret: exampleSecret, at: date(-1)) == epochCode)
+    #expect(try totp.generate(secret: exampleSecret, at: date(-1_000_000_000)) == epochCode)
+    // Verification is likewise safe against a pre-epoch reference.
+    #expect(try totp.isValid(code: epochCode, secret: exampleSecret, at: date(-5)))
+  }
+
   @Test("a malformed base32 secret throws invalidSecret")
   func badSecret() {
     // '1', '8', '9', '0' are outside the RFC 4648 base32 alphabet.
@@ -163,5 +174,34 @@ struct Base32Tests {
   func rejectsInvalid() {
     #expect(Base32.decode("0189") == nil)  // digits absent from the base32 alphabet
     #expect(Base32.decode("MZX W6") == nil)  // internal whitespace is invalid, as in Go
+  }
+
+  // Accept/reject decisions below were pinned against Go's `base32.StdEncoding.DecodeString` run over
+  // pquerna's exact secret normalization (TrimSpace, right-pad `=` to a multiple of 8, ToUpper). See
+  // the throwaway program in CRY-03's notes; e.g. Go reports "illegal base32 data at input byte 2"
+  // for "MZ=XW6" and "at input byte 1" for "A".
+  @Test("rejects mid-string padding instead of silently truncating (CRY-03)")
+  func rejectsMidStringPadding() {
+    // Go: "MZ=XW6" -> REJECT. The old decoder broke at the first '=' and decoded the "MZ" prefix.
+    #expect(Base32.decode("MZ=XW6") == nil)
+    // Go: "MZXW6===AA" -> REJECT (data after the padding run).
+    #expect(Base32.decode("MZXW6===AA") == nil)
+    // A legitimate trailing padding run is still fine ("MZXW6===" is base32("foo")).
+    #expect(Base32.decode("MZXW6===") == Data("foo".utf8))
+  }
+
+  @Test("rejects impossible final-quantum lengths (CRY-03)")
+  func rejectsImpossibleLengths() {
+    // Go rejects data lengths whose count % 8 is 1, 3, or 6 — no encoder emits them.
+    #expect(Base32.decode("A") == nil)  // count 1
+    #expect(Base32.decode("MZX") == nil)  // count 3
+    #expect(Base32.decode("MZXW6A") == nil)  // count 6
+    // The neighbouring valid quantum lengths still decode (Go-confirmed byte values).
+    #expect(Base32.decode("MZ") == Data([0x66]))  // count 2 -> 1 byte
+    #expect(Base32.decode("MZXW") == Data([0x66, 0x6f]))  // count 4 -> 2 bytes
+    #expect(Base32.decode("MZXWA") == Data([0x66, 0x6f, 0x60]))  // count 5 -> 3 bytes
+    #expect(Base32.decode("MZXW6AB") == Data([0x66, 0x6f, 0x6f, 0x00]))  // count 7 -> 4 bytes
+    // count 8 -> 5 bytes
+    #expect(Base32.decode("MZXW6YTB") == Data([0x66, 0x6f, 0x6f, 0x62, 0x61]))
   }
 }

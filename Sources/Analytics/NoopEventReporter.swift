@@ -8,7 +8,9 @@ public struct NoopEventReporter: EventReporter {
 
   public func addUser(userID: String, properties: [String: AnalyticsPropertyValue]) {}
 
-  public func eventOccurred(event: String, userID: String, properties: [String: AnalyticsPropertyValue]) {}
+  public func eventOccurred(
+    event: String, userID: String, properties: [String: AnalyticsPropertyValue]
+  ) {}
 
   public func eventOccurredAnonymous(
     event: String, anonymousID: String, properties: [String: AnalyticsPropertyValue]

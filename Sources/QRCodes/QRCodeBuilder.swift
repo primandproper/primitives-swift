@@ -10,9 +10,11 @@ import Foundation
 /// - `context.Context` — Go carried it only to open an observability span; there is no async work
 ///   to cancel here (QR rendering is synchronous CPU work), so it is elided, mirroring how the
 ///   `Retry` port dropped `ctx` in favor of structured concurrency.
-/// - The tracer/logger constructor arguments — this port is deliberately dependency-free (see the
-///   package's `Package.swift` target: it links only the system `CoreImage`/`ImageIO` frameworks),
-///   so it takes no `Observability` dependency. A caller that wants a span can wrap the call.
+/// - The tracer/logger constructor arguments — this port is deliberately dependency-free: the
+///   `QRCodes` target declares no package dependencies, relying only on the system
+///   `CoreImage`/`ImageIO` frameworks, which Apple-platform autolinking pulls in from their `import`s
+///   (no explicit `linkerSettings` needed). So it takes no `Observability` dependency; a caller that
+///   wants a span can wrap the call.
 ///
 /// The concrete implementation is ``TOTPQRCodeBuilder``; ``NoopQRCodeBuilder`` is the no-op used
 /// for DI/tests. `Sendable` so a builder can be stored in a service or captured by a `Task`.

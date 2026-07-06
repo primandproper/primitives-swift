@@ -9,7 +9,9 @@ public struct NoopPurchaseManager: PurchaseManager {
 
   public func products(for identifiers: [String]) -> [PurchaseProduct] { [] }
 
-  public func purchase(productID: String, options: PurchaseOptions) -> PurchaseResult { .userCancelled }
+  public func purchase(productID: String, options: PurchaseOptions) -> PurchaseResult {
+    .userCancelled
+  }
 
   public func currentEntitlements() -> [Entitlement] { [] }
 

@@ -111,7 +111,8 @@ struct MakeCompressorTests {
 
   @Test("carries a custom cap through the factory")
   func customCap() throws {
-    let compressor = try #require(makeCompressor(named: "lzfse", maxDecompressedBytes: 4096) as? AppleCompressor)
+    let compressor = try #require(
+      makeCompressor(named: "lzfse", maxDecompressedBytes: 4096) as? AppleCompressor)
     #expect(compressor.maxDecompressedBytes == 4096)
   }
 }
@@ -151,8 +152,10 @@ struct DecompressionBombTests {
   func defaultCap() {
     #expect(AppleCompressor(algorithm: .lzfse).maxDecompressedBytes == 64 << 20)
     // A non-positive override keeps the default, mirroring Go's WithMaxDecompressedBytes(0).
-    #expect(AppleCompressor(algorithm: .lzfse, maxDecompressedBytes: 0).maxDecompressedBytes == 64 << 20)
-    #expect(AppleCompressor(algorithm: .lzfse, maxDecompressedBytes: -5).maxDecompressedBytes == 64 << 20)
+    #expect(
+      AppleCompressor(algorithm: .lzfse, maxDecompressedBytes: 0).maxDecompressedBytes == 64 << 20)
+    #expect(
+      AppleCompressor(algorithm: .lzfse, maxDecompressedBytes: -5).maxDecompressedBytes == 64 << 20)
   }
 }
 

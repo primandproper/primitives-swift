@@ -33,8 +33,10 @@ struct NoopPushNotificationSenderTests {
   @Test("succeeds regardless of platform")
   func anyPlatform() async throws {
     let sender = NoopPushNotificationSender()
-    try await sender.sendPush(platform: "android", token: "token", message: PushMessage(title: "t", body: "b"))
-    try await sender.sendPush(platform: "unknown", token: "token", message: PushMessage(title: "t", body: "b"))
+    try await sender.sendPush(
+      platform: "android", token: "token", message: PushMessage(title: "t", body: "b"))
+    try await sender.sendPush(
+      platform: "unknown", token: "token", message: PushMessage(title: "t", body: "b"))
   }
 }
 
@@ -50,15 +52,17 @@ struct MockPushNotificationSenderTests {
     try await sender.sendPush(platform: "android", token: "token-2", message: second)
 
     let calls = await sender.calls
-    #expect(calls == [
-      .init(platform: "ios", token: "token-1", message: first),
-      .init(platform: "android", token: "token-2", message: second),
-    ])
+    #expect(
+      calls == [
+        .init(platform: "ios", token: "token-1", message: first),
+        .init(platform: "android", token: "token-2", message: second),
+      ])
   }
 
   @Test("still records a call that then throws the configured error")
   func recordsBeforeThrowing() async {
-    let sender = MockPushNotificationSender(throwing: NotificationsError.unsupportedProvider(.apnsFCM))
+    let sender = MockPushNotificationSender(
+      throwing: NotificationsError.unsupportedProvider(.apnsFCM))
     let message = PushMessage(title: "t", body: "b")
 
     await #expect(throws: NotificationsError.unsupportedProvider(.apnsFCM)) {
@@ -174,9 +178,12 @@ struct NotificationsConfigTests {
       """#.utf8)
 
     let config = try JSONDecoder().decode(NotificationsConfig.self, from: json)
-    #expect(config.apns == APNsConfig(
-      authKeyPath: "/keys/AuthKey.p8", keyID: "KEY123", teamID: "TEAM123", bundleID: "com.example.app",
-      production: true))
+    #expect(
+      config.apns
+        == APNsConfig(
+          authKeyPath: "/keys/AuthKey.p8", keyID: "KEY123", teamID: "TEAM123",
+          bundleID: "com.example.app",
+          production: true))
     #expect(config.fcm == FCMConfig(credentialsPath: "/creds/fcm.json"))
     #expect(config.resolvedProvider == .apnsFCM)
   }
@@ -195,7 +202,8 @@ struct NotificationsConfigTests {
 
   @Test("missing apns/fcm decode to nil, matching Go's nil pointer zero value")
   func partialDecode() throws {
-    let config = try JSONDecoder().decode(NotificationsConfig.self, from: Data(#"{"provider":"noop"}"#.utf8))
+    let config = try JSONDecoder().decode(
+      NotificationsConfig.self, from: Data(#"{"provider":"noop"}"#.utf8))
     #expect(config.apns == nil)
     #expect(config.fcm == nil)
   }
@@ -209,7 +217,8 @@ struct NotificationsConfigTests {
   func noopProviderBuildsSender() async throws {
     let config = NotificationsConfig(provider: "noop")
     let sender = try config.makePushSender()
-    try await sender.sendPush(platform: "ios", token: "token", message: PushMessage(title: "t", body: "b"))
+    try await sender.sendPush(
+      platform: "ios", token: "token", message: PushMessage(title: "t", body: "b"))
   }
 
   @Test("unknown provider builds a noop sender, matching Go's lenient default")

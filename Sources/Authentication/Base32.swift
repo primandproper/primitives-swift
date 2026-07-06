@@ -9,8 +9,10 @@ import Foundation
 /// side accepts decodes to the identical key bytes here — the whole point being that codes match.
 ///
 /// Decoding is lenient about the trailing partial group's spare bits (they are discarded, as an
-/// over-strict decoder would reject otherwise-valid authenticator secrets), and returns `nil` for any
-/// character outside the alphabet — the caller maps that to ``TOTPError/invalidSecret``.
+/// over-strict decoder would reject otherwise-valid authenticator secrets), but — matching Go's
+/// `base32.StdEncoding` after that normalization — it still rejects `=` padding anywhere but the
+/// trailing run and final-quantum lengths base32 can never emit. Any character outside the alphabet
+/// returns `nil`; the caller maps that to ``TOTPError/invalidSecret``.
 enum Base32 {
   private static let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".utf8)
 
@@ -35,22 +37,40 @@ enum Base32 {
 
     var buffer: UInt32 = 0
     var bitsInBuffer: UInt32 = 0
+    var dataCount = 0
+    var seenPadding = false
 
     for byte in trimmed.utf8 {
       if byte == UInt8(ascii: "=") {
-        // Padding: everything meaningful has been consumed by this point.
-        break
+        // `=` is only legal as a trailing run; note it and keep scanning so a later data character
+        // (mid-string padding) can be rejected, matching Go's `base32.StdEncoding`.
+        seenPadding = true
+        continue
+      }
+      // A data character after padding means the `=` sat mid-string — Go rejects this outright.
+      if seenPadding {
+        return nil
       }
       let value = reverse[Int(byte)]
       if value == 0xFF {
         return nil
       }
+      dataCount += 1
       buffer = (buffer << 5) | UInt32(value)
       bitsInBuffer += 5
       if bitsInBuffer >= 8 {
         bitsInBuffer -= 8
         output.append(UInt8((buffer >> bitsInBuffer) & 0xFF))
       }
+    }
+
+    // Reject final-quantum lengths base32 can never produce (Go rejects these too): a trailing group
+    // of 1, 3, or 6 data characters carries a fractional byte and no valid encoder emits it.
+    switch dataCount % 8 {
+    case 1, 3, 6:
+      return nil
+    default:
+      break
     }
 
     return Data(output)

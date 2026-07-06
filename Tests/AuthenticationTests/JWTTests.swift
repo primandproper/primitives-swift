@@ -63,7 +63,8 @@ struct JWTHS256Tests {
 
   @Test("rejects a mismatched issuer")
   func wrongIssuer() {
-    let p = JWTParser(key: .hs256(secret: key), expectedIssuer: "someone-else", expectedAudience: audience)
+    let p = JWTParser(
+      key: .hs256(secret: key), expectedIssuer: "someone-else", expectedAudience: audience)
     #expect(throws: JWTError.invalidIssuer) {
       _ = try p.parse(goToken, at: validInstant)
     }
@@ -71,7 +72,8 @@ struct JWTHS256Tests {
 
   @Test("rejects a mismatched audience")
   func wrongAudience() {
-    let p = JWTParser(key: .hs256(secret: key), expectedIssuer: issuer, expectedAudience: "other-service")
+    let p = JWTParser(
+      key: .hs256(secret: key), expectedIssuer: issuer, expectedAudience: "other-service")
     #expect(throws: JWTError.invalidAudience) {
       _ = try p.parse(goToken, at: validInstant)
     }
@@ -200,14 +202,64 @@ struct JWTAsymmetricTests {
 
     let input = makeUnsignedInput(
       header: ["alg": "RS256", "typ": "JWT"], claims: ["sub": "u", "exp": 2_000_000])
-    let signature = try #require(
-      SecKeyCreateSignature(
-        privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(input.utf8) as CFData, &error)
-    ) as Data
+    let signature =
+      try #require(
+        SecKeyCreateSignature(
+          privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(input.utf8) as CFData, &error)
+      ) as Data
     let token = input + "." + Base64URLNoPad.encode(signature)
 
     let parser = JWTParser(key: .rsa(publicKey))
     let claims = try parser.parse(token, at: now)
     #expect(claims.subject == "u")
+  }
+}
+
+// MARK: - Sendability regression (CRY-11)
+
+/// An actor that holds a ``JWTParser`` as stored state. This only type-checks because
+/// ``JWTVerificationKey`` (and therefore ``JWTParser``) conforms to `Sendable` — before CRY-11 the
+/// `rsa` case's `SecKey` made the type non-`Sendable`, and the compiler would have rejected storing a
+/// parser here with "non-sendable type 'JWTParser' in actor-isolated property".
+private actor TokenVerifier {
+  private let parser: JWTParser
+
+  init(parser: JWTParser) {
+    self.parser = parser
+  }
+
+  func verify(_ token: String, at date: Date) throws -> JWTClaims {
+    try parser.parse(token, at: date)
+  }
+}
+
+@Suite("JWTParser is Sendable (CRY-11)")
+struct JWTParserSendableTests {
+  private let key = Data("HEREISA32CHARSECRETWHICHISMADEUP".utf8)
+  private let now = Date(timeIntervalSince1970: 1_000_000)
+
+  @Test("an HS256 parser can be stored in an actor and used across the isolation boundary")
+  func storedInActor() async throws {
+    let token = signHS256(claims: ["sub": "actor-user", "exp": 2_000_000], key: key)
+    let parser = JWTParser(key: .hs256(secret: key))
+    let verifier = TokenVerifier(parser: parser)
+
+    let claims = try await verifier.verify(token, at: now)
+    #expect(claims.subject == "actor-user")
+  }
+
+  @Test("an HS256 parser can cross into a detached, non-isolated Task via a @Sendable closure")
+  func capturedInSendableTask() async throws {
+    let token = signHS256(claims: ["sub": "task-user", "exp": 2_000_000], key: key)
+    let parser = JWTParser(key: .hs256(secret: key))
+    let deadline = now
+
+    // `Task.detached` requires its closure to be `@Sendable`; capturing `parser` here would not
+    // compile before CRY-11.
+    let claims = try await Task.detached { @Sendable in
+      try parser.parse(token, at: deadline)
+    }.value
+
+    #expect(claims.subject == "task-user")
   }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Hashes a string into a **lowercase hex-encoded** digest, ported from platform-go's
-/// `cryptography/hashing.Hasher`.
+/// `cryptography/hashing.ContentHasher`.
 ///
 /// The Go interface is `Hash(content string) (string, error)`. Every Go implementation only ever
 /// returns a non-nil error from `hash.Hash.Write`, which — for all of Go's stdlib hashers — never
@@ -14,7 +14,7 @@ import Foundation
 ///   ``SHA256Hasher`` and ``SHA512Hasher`` are cryptographic hashes; ``Adler32Hasher``, ``CRC64Hasher``,
 ///   and ``FNVHasher`` are **non-cryptographic checksums** and MUST NOT be selected for security,
 ///   password, or tamper-resistance purposes. Choose the implementation deliberately.
-public protocol Hasher: Sendable {
+public protocol ContentHasher: Sendable {
   /// Returns the lowercase hex-encoded digest of `content` (UTF-8 encoded before hashing, exactly as
   /// Go's `[]byte(content)`).
   func hash(_ content: String) -> String

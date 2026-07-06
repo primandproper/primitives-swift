@@ -76,6 +76,7 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
   private struct State {
     var observations: [Observation] = []
     var errors: [(context: String, error: String)] = []
+    var acknowledgements: [String] = []
     var ended = false
   }
 
@@ -89,6 +90,9 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
 
   public var observations: [Observation] { state.withLock { $0.observations } }
   public var recordedErrors: [(context: String, error: String)] { state.withLock { $0.errors } }
+  /// Descriptions passed to a successful `acknowledge(nil, …)`, mirroring the info log the production
+  /// operation writes on the success path so tests can observe it.
+  public var acknowledgements: [String] { state.withLock { $0.acknowledgements } }
   public var ended: Bool { state.withLock { $0.ended } }
 
   /// Keys seen on a given pillar (`both` always counts toward span and log too).
@@ -104,32 +108,32 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
 
   // MARK: Operation
 
-  private func record(_ key: String, _ value: Any, _ pillar: Pillar) {
+  private func record(_ key: String, _ value: AttributeValue, _ pillar: Pillar) {
     let obs = Observation(
-      key: key, value: String(describing: value), pillar: pillar, seq: nextSeq())
+      key: key, value: value.rendered, pillar: pillar, seq: nextSeq())
     state.withLock { $0.observations.append(obs) }
   }
 
   @discardableResult
-  public func set(_ key: String, _ value: Any) -> any Operation {
+  public func set(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .both)
     return self
   }
 
   @discardableResult
-  public func setValues(_ values: [String: Any]) -> any Operation {
+  public func setValues(_ values: [String: AttributeValue]) -> any Operation {
     for (k, v) in values.sorted(by: { $0.key < $1.key }) { record(k, v, .both) }
     return self
   }
 
   @discardableResult
-  public func spanOnly(_ key: String, _ value: Any) -> any Operation {
+  public func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .span)
     return self
   }
 
   @discardableResult
-  public func logOnly(_ key: String, _ value: Any) -> any Operation {
+  public func logOnly(_ key: String, _ value: AttributeValue) -> any Operation {
     record(key, value, .log)
     return self
   }
@@ -143,6 +147,10 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
   public func acknowledge(_ error: Error?, _ description: String) {
     if let error {
       state.withLock { $0.errors.append((description, String(describing: error))) }
+    } else {
+      // LiveOperation logs `info(description)` on the success path; capture it so tests observing an
+      // acknowledged success aren't blind to it.
+      state.withLock { $0.acknowledgements.append(description) }
     }
   }
 

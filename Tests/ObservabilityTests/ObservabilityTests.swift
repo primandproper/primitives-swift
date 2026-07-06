@@ -1,5 +1,8 @@
 import Foundation
+import Metrics
 import Testing
+
+import struct os.OSAllocatedUnfairLock
 
 @testable import Observability
 
@@ -113,11 +116,244 @@ struct ConfigTests {
 
   @Test("config round-trips through Codable")
   func codableRoundTrip() throws {
-    let original = ObservabilityConfig(serviceName: "svc", logging: .init(provider: .swiftLog))
+    let original = ObservabilityConfig(serviceName: "svc", logging: .init(provider: .noop))
     let data = try JSONEncoder().encode(original)
     let decoded = try JSONDecoder().decode(ObservabilityConfig.self, from: data)
     #expect(decoded.serviceName == "svc")
-    #expect(decoded.logging.provider == .swiftLog)
+    #expect(decoded.logging.provider == .noop)
+  }
+}
+
+// MARK: - OBS-11: Pillars shutdown/flush seam
+
+@Suite("Pillars shutdown")
+struct PillarsShutdownTests {
+
+  @Test("shutdown() can be awaited on the noop pillars")
+  func noopShutdownAwaitable() async {
+    await Pillars.noop.shutdown()
+    #expect(Bool(true))  // reached: shutdown returned without hanging or trapping
+  }
+
+  @Test("shutdown() can be awaited on a live, bootstrapped pillars")
+  func liveShutdownAwaitable() async {
+    let pillars = ObservabilityConfig.default.bootstrap()
+    await pillars.shutdown()
+    #expect(Bool(true))
+  }
+}
+
+// MARK: - OBS-12: Span protocol gaps for the OTel adapter
+
+@Suite("Span kind / status / naming")
+struct SpanSeamTests {
+
+  @Test("setStatus is callable on a live signpost span and the noop span")
+  func setStatusCallable() {
+    let signpost = SignpostTracer().startSpan("op")
+    signpost.setStatus(.ok)
+    signpost.setStatus(.error)
+    signpost.setStatus(.unset)
+    signpost.end()
+
+    let noop = NoopTracer().startSpan("op")
+    noop.setStatus(.error)
+    noop.end()
+    #expect(Bool(true))  // no crash on either backend
+  }
+
+  @Test("bare startSpan(_:) still works and defaults kind to .internal")
+  func bareStartSpanDefaults() {
+    let span = SignpostTracer().startSpan("op") as! SignpostSpan
+    #expect(span.name == "op")
+    #expect(span.kind == .internal)
+    span.end()
+  }
+
+  @Test("startSpan with kind and initial attributes seeds the span")
+  func startSpanWithKindAndAttributes() {
+    let span =
+      SignpostTracer()
+      .startSpan(
+        "op", kind: .server, attributes: ["http.method": .string("GET"), "count": .int(3)])
+      as! SignpostSpan
+    #expect(span.name == "op")
+    #expect(span.kind == .server)
+    // Attaching seeded attributes must not crash; values land on the signpost event stream.
+    span.end()
+  }
+
+  @Test("SpanKind covers the OTel roles and encodes to its lowercase name")
+  func spanKindRawValues() throws {
+    #expect(SpanKind.internal.rawValue == "internal")
+    #expect(SpanKind.client.rawValue == "client")
+    #expect(SpanKind.server.rawValue == "server")
+    #expect(SpanKind.producer.rawValue == "producer")
+    #expect(SpanKind.consumer.rawValue == "consumer")
+  }
+
+  @Test("per-component tracer naming rides the signpost category")
+  func perComponentNaming() {
+    let base = SignpostTracer()
+    #expect(base.category == "spans")
+
+    let named = base.named("ProfileService") as! SignpostTracer
+    #expect(named.category == "spans.ProfileService")
+
+    // A LiveObserver wires the component name into its tracer via `named`.
+    let observer =
+      makeObserver("Checkout", ObservabilityConfig.default.bootstrap()) as! LiveObserver
+    #expect((observer.tracer as! SignpostTracer).category == "spans.Checkout")
+
+    // The noop tracer ignores naming (default seam), returning an equivalent tracer.
+    #expect(NoopTracer().named("x") is NoopTracer)
+  }
+}
+
+// MARK: - OBS-12: TracingConfig sampleRatio
+
+@Suite("TracingConfig sampleRatio")
+struct TracingSampleRatioTests {
+
+  @Test("empty object decodes sampleRatio to the 1.0 default")
+  func emptyObjectDefaultsRatio() throws {
+    let cfg = try JSONDecoder().decode(TracingConfig.self, from: Data("{}".utf8))
+    #expect(cfg.sampleRatio == 1.0)
+    #expect(cfg.provider == .signpost)
+  }
+
+  @Test("present sampleRatio is decoded")
+  func presentRatioDecoded() throws {
+    let cfg = try JSONDecoder().decode(
+      TracingConfig.self, from: Data(#"{"sampleRatio":0.25}"#.utf8))
+    #expect(cfg.sampleRatio == 0.25)
+  }
+
+  @Test("sampleRatio round-trips through the whole ObservabilityConfig")
+  func ratioRoundTrips() throws {
+    let original = ObservabilityConfig(tracing: .init(sampleRatio: 0.5))
+    let data = try JSONEncoder().encode(original)
+    let decoded = try JSONDecoder().decode(ObservabilityConfig.self, from: data)
+    #expect(decoded.tracing.sampleRatio == 0.5)
+  }
+
+  @Test("empty ObservabilityConfig object leaves tracing.sampleRatio at 1.0")
+  func emptyRootDefaultsRatio() throws {
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data("{}".utf8))
+    #expect(cfg.tracing.sampleRatio == 1.0)
+  }
+}
+
+// MARK: - Diagnostics (OBS-21)
+
+/// Thread-safe recording logger for asserting on emitted summary lines.
+final class RecordingLogger: Logger, @unchecked Sendable {
+  private let lock = NSLock()
+  private var _messages: [String] = []
+
+  var messages: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return _messages
+  }
+
+  func info(_ message: String) {
+    lock.lock()
+    _messages.append(message)
+    lock.unlock()
+  }
+  func debug(_ message: String) {}
+  func error(_ whatWasHappening: String, _ error: Error) {}
+  func withName(_ name: String) -> any Logger { self }
+  func withValue(_ key: String, _ value: AttributeValue) -> any Logger { self }
+  func withValues(_ values: [String: AttributeValue]) -> any Logger { self }
+  func withError(_ error: Error) -> any Logger { self }
+  func withSpan(_ span: any Span) -> any Logger { self }
+}
+
+/// Stands in for `MXDiagnosticPayload`, which can't be constructed headless. Lets the decode/dispatch
+/// seam be exercised off-device.
+struct FakeDiagnosticPayload: DiagnosticPayloadConvertible {
+  let payload: DiagnosticPayload
+  func asDiagnosticPayload() -> DiagnosticPayload { payload }
+}
+
+@Suite("Diagnostics")
+struct DiagnosticsTests {
+
+  @Test("dispatcher decodes each source and forwards to the handler in order")
+  func dispatcherForwardsToHandler() {
+    let received = ReceivedBox()
+    let dispatcher = DiagnosticsDispatcher(
+      logger: NoopLogger(),
+      handler: { payload in received.append(payload) })
+
+    let first = DiagnosticPayload(crashes: [CrashDiagnostic(signal: 11)])
+    let second = DiagnosticPayload(hangs: [HangDiagnostic(durationSeconds: 2.5)])
+    dispatcher.dispatch([
+      FakeDiagnosticPayload(payload: first), FakeDiagnosticPayload(payload: second),
+    ])
+
+    #expect(received.values == [first, second])
+  }
+
+  @Test("dispatcher logs a structured summary per payload")
+  func dispatcherLogsSummary() {
+    let logger = RecordingLogger()
+    let dispatcher = DiagnosticsDispatcher(logger: logger, handler: nil)
+
+    let payload = DiagnosticPayload(
+      crashes: [CrashDiagnostic(exceptionType: 1), CrashDiagnostic(exceptionType: 2)],
+      hangs: [HangDiagnostic(durationSeconds: 1)])
+    dispatcher.dispatch([payload])
+
+    #expect(logger.messages == ["MetricKit diagnostic payload: crashes=2 hangs=1"])
+  }
+
+  @Test("nil handler is tolerated — still logs, does not crash")
+  func nilHandlerTolerated() {
+    let logger = RecordingLogger()
+    let dispatcher = DiagnosticsDispatcher(logger: logger, handler: nil)
+    dispatcher.dispatch([DiagnosticPayload(crashes: [CrashDiagnostic()])])
+    #expect(logger.messages.count == 1)
+  }
+
+  @Test("decoded value type carries the meaningful crash/hang fields")
+  func valueTypeShape() {
+    let crash = CrashDiagnostic(
+      terminationReason: "Namespace SIGNAL",
+      exceptionType: 6,
+      exceptionCode: 0,
+      signal: 11,
+      virtualMemoryRegionInfo: "0x0 is not in any region")
+    #expect(crash.signal == 11)
+    #expect(crash.exceptionType == 6)
+    #expect(HangDiagnostic(durationSeconds: 3.2).durationSeconds == 3.2)
+
+    #expect(DiagnosticPayload().isEmpty)
+    #expect(!DiagnosticPayload(crashes: [crash]).isEmpty)
+  }
+
+  @Test("identity conformance: a DiagnosticPayload converts to itself")
+  func identityConformance() {
+    let payload = DiagnosticPayload(hangs: [HangDiagnostic(durationSeconds: 0.5)])
+    #expect(payload.asDiagnosticPayload() == payload)
+  }
+}
+
+/// Sendable sink for handler callbacks under Swift 6 concurrency.
+final class ReceivedBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _values: [DiagnosticPayload] = []
+  var values: [DiagnosticPayload] {
+    lock.lock()
+    defer { lock.unlock() }
+    return _values
+  }
+  func append(_ p: DiagnosticPayload) {
+    lock.lock()
+    _values.append(p)
+    lock.unlock()
   }
 }
 
@@ -133,5 +369,168 @@ struct LoggerTests {
     let logger = NoopLogger().withSpan(span)
     logger.info("hello")  // no crash, no output
     #expect(Bool(true))
+  }
+}
+
+// MARK: - OBS-01: concurrent set() must not drop keys
+
+/// Value-semantics `Logger` that keeps its accumulated fields inspectable, so we can assert none were
+/// lost across concurrent `set` calls.
+private struct CapturingLogger: Logger {
+  let fields: [String: String]
+  init(fields: [String: String] = [:]) { self.fields = fields }
+  func info(_ message: String) {}
+  func debug(_ message: String) {}
+  func error(_ whatWasHappening: String, _ error: Error) {}
+  func withName(_ name: String) -> any Logger { self }
+  func withValue(_ key: String, _ value: AttributeValue) -> any Logger {
+    var next = fields
+    next[key] = value.rendered
+    return CapturingLogger(fields: next)
+  }
+}
+
+@Suite("Operation concurrency")
+struct OperationConcurrencyTests {
+
+  @Test("concurrent set() calls never drop keys")
+  func concurrentSetNoLostUpdates() async {
+    let span = NoopSpan(
+      name: "t", context: SpanContext(traceID: "t", spanID: "s", parentSpanID: nil))
+    let op = LiveOperation(span: span, logger: CapturingLogger())
+
+    let n = 500
+    await withTaskGroup(of: Void.self) { group in
+      for i in 0..<n { group.addTask { op.set("key\(i)", i) } }
+    }
+
+    let captured = op.logger as! CapturingLogger
+    #expect(captured.fields.count == n)
+    for i in 0..<n { #expect(captured.fields["key\(i)"] == "\(i)") }
+  }
+}
+
+// MARK: - OBS-02: noop metrics stay silent even after a factory is installed
+
+private final class SpyCounterHandler: CounterHandler {
+  let onIncrement: @Sendable () -> Void
+  init(_ onIncrement: @escaping @Sendable () -> Void) { self.onIncrement = onIncrement }
+  func increment(by amount: Int64) { onIncrement() }
+  func reset() {}
+}
+
+private final class SpyMetricsFactory: MetricsFactory, @unchecked Sendable {
+  let count = OSAllocatedUnfairLock(initialState: 0)
+  var increments: Int { count.withLock { $0 } }
+
+  func makeCounter(label: String, dimensions: [(String, String)]) -> CounterHandler {
+    SpyCounterHandler { [count] in count.withLock { $0 += 1 } }
+  }
+  func makeRecorder(label: String, dimensions: [(String, String)], aggregate: Bool)
+    -> RecorderHandler
+  {
+    NOOPMetricsHandler.instance
+  }
+  func makeTimer(label: String, dimensions: [(String, String)]) -> TimerHandler {
+    NOOPMetricsHandler.instance
+  }
+  func destroyCounter(_ handler: CounterHandler) {}
+  func destroyRecorder(_ handler: RecorderHandler) {}
+  func destroyTimer(_ handler: TimerHandler) {}
+}
+
+@Suite("Metrics noop isolation")
+struct MetricsNoopIsolationTests {
+
+  @Test("noop provider never emits, even after a real factory is installed")
+  func noopStaysSilent() {
+    let spy = SpyMetricsFactory()
+    // Bind the spy as the current factory for the scope, without a one-time global bootstrap.
+    withMetricsFactory(spy) {
+      // A provider bound to the installed factory does emit …
+      SwiftMetricsProvider().counter("real", tags: [:]).increment()
+      #expect(spy.increments == 1)
+      // … but the noop provider must stay silent regardless of what is installed.
+      NoopMetricsProvider().counter("noop", tags: [:]).increment()
+      #expect(spy.increments == 1)
+    }
+  }
+}
+
+// MARK: - OBS-03: OSLogLogger keeps field values off the public channel
+
+@Suite("OSLogLogger privacy")
+struct OSLogPrivacyTests {
+
+  @Test("field values render to the private channel; keys and name stay public")
+  func fieldValuesArePrivate() {
+    let logger =
+      OSLogLogger(subsystem: "test", category: "test", name: "svc")
+      .withValue(Keys.userID, "SECRET-PII") as! OSLogLogger
+
+    let pub = logger.renderPublic("hello")
+    let priv = logger.renderFields()
+
+    #expect(pub.contains("svc"))  // name public
+    #expect(pub.contains("hello"))  // message public
+    #expect(pub.contains(Keys.userID))  // key public
+    #expect(!pub.contains("SECRET-PII"))  // value NOT on the public channel
+    #expect(priv.contains("\(Keys.userID)=SECRET-PII"))  // value only on the private channel
+  }
+}
+
+// MARK: - OBS-04: lenient config decoding
+
+@Suite("Config lenient decoding")
+struct ConfigLenientDecodingTests {
+
+  @Test("empty object decodes to defaults")
+  func emptyObjectDecodes() throws {
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data("{}".utf8))
+    #expect(cfg.serviceName == "platform-swift")
+    #expect(cfg.logging.provider == .osLog)
+    #expect(cfg.logging.category == "observability")
+    #expect(cfg.logging.subsystem == nil)
+    #expect(cfg.tracing.provider == .signpost)
+    #expect(cfg.metrics.provider == .swiftMetrics)
+  }
+
+  @Test("partial config fills missing keys with defaults")
+  func partialConfigDecodes() throws {
+    let json = #"{"serviceName":"svc","logging":{"provider":"noop"}}"#
+    let cfg = try JSONDecoder().decode(ObservabilityConfig.self, from: Data(json.utf8))
+    #expect(cfg.serviceName == "svc")
+    #expect(cfg.logging.provider == .noop)
+    #expect(cfg.logging.category == "observability")  // default preserved on the present block
+    #expect(cfg.tracing.provider == .signpost)  // whole missing block defaulted
+    #expect(cfg.metrics.provider == .swiftMetrics)
+  }
+}
+
+// MARK: - OBS-05: recording double captures the success-acknowledgement path
+
+@Suite("Recording acknowledge")
+struct RecordingAcknowledgeTests {
+
+  @Test("acknowledge(nil) records the success description")
+  func acknowledgeSuccessRecorded() async {
+    let observer = recordingObserver("test")
+    await observer.operation("op") { op in
+      op.acknowledge(nil, "saved profile")
+    }
+    let op = observer.operations.first!
+    #expect(op.acknowledgements == ["saved profile"])
+    #expect(op.recordedErrors.isEmpty)
+  }
+
+  @Test("acknowledge(error) records the error, not a success")
+  func acknowledgeErrorRecorded() async {
+    let observer = recordingObserver("test")
+    await observer.operation("op") { op in
+      op.acknowledge(SampleError(), "failed to save")
+    }
+    let op = observer.operations.first!
+    #expect(op.acknowledgements.isEmpty)
+    #expect(op.recordedErrors.contains { $0.context == "failed to save" })
   }
 }

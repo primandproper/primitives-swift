@@ -1,5 +1,5 @@
-import os
 import Testing
+import os
 
 @testable import Analytics
 
@@ -38,7 +38,8 @@ struct EventReporterMockTests {
     try await mock.addUser(userID: "user123", properties: ["plan": "pro"])
 
     let calls = await mock.addUserCalls
-    #expect(calls == [EventReporterMock.AddUserCall(userID: "user123", properties: ["plan": "pro"])])
+    #expect(
+      calls == [EventReporterMock.AddUserCall(userID: "user123", properties: ["plan": "pro"])])
   }
 
   @Test("propagates an error thrown by the addUser handler")
@@ -59,7 +60,8 @@ struct EventReporterMockTests {
   func eventOccurred() async throws {
     let mock = EventReporterMock()
 
-    try await mock.eventOccurred(event: "signed_up", userID: "user123", properties: ["source": "web"])
+    try await mock.eventOccurred(
+      event: "signed_up", userID: "user123", properties: ["source": "web"])
 
     let calls = await mock.eventOccurredCalls
     #expect(

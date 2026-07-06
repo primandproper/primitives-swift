@@ -57,6 +57,38 @@ struct EventCodableTests {
     #expect(decoded.payload == nil)
   }
 
+  @Test("a bare snowflake / high-precision-decimal payload round-trips byte-for-byte")
+  func scalarLargeNumberPayloadsPreservePrecision() throws {
+    // A `Double`-backed number would round `10000000000000000001` (an int64 past 2^53) to `1e+19` and
+    // truncate the long decimal, silently corrupting the payload; the `Decimal` path preserves both.
+    // These bare-number payloads have no object keys, so the round-trip is byte-for-byte deterministic.
+    for literal in ["10000000000000000001", "3.141592653589793238462643383279"] {
+      let event = Event(type: "minted", payload: Data(literal.utf8))
+      let encoded = try JSONEncoder().encode(event)
+      let decoded = try JSONDecoder().decode(Event.self, from: encoded)
+      let decodedPayload = try #require(decoded.payload)
+      #expect(String(decoding: decodedPayload, as: UTF8.self) == literal)
+    }
+  }
+
+  @Test("a snowflake id and high-precision decimal survive an object-payload round-trip")
+  func objectLargeNumberPayloadPreservesPrecision() throws {
+    // Matches Go's `json.RawMessage` round-trip of the same input, produced by `json.Unmarshal`/
+    // `json.Marshal` over `eventstream.Event` in platform-go (Go 1.26.4):
+    //   in/out: {"type":"minted","payload":{"id":10000000000000000001,"ratio":3.14159265358979323846...}}
+    // Object key order through a Swift `Dictionary` isn't deterministic, so assert the number literals
+    // survive rather than the whole-object byte layout.
+    let payloadJSON = #"{"id":10000000000000000001,"ratio":3.141592653589793238462643383279}"#
+    let event = Event(type: "minted", payload: Data(payloadJSON.utf8))
+
+    let encoded = try JSONEncoder().encode(event)
+    let decoded = try JSONDecoder().decode(Event.self, from: encoded)
+
+    let roundTripped = String(decoding: try #require(decoded.payload), as: UTF8.self)
+    #expect(roundTripped.contains("10000000000000000001"))
+    #expect(roundTripped.contains("3.141592653589793238462643383279"))
+  }
+
   @Test("a scalar payload (string/number/bool/null) round-trips")
   func scalarPayloadsRoundTrip() throws {
     for (json, expectedType) in [

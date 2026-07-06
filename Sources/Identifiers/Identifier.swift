@@ -10,7 +10,7 @@ import Foundation
 /// can round-trip and validate the strings we mint — a `UUID` would be wire-incompatible.
 ///
 /// The one intentional divergence is the machine ID: xid hashes the host's machine-id/hostname;
-/// we derive three bytes from `ProcessInfo.hostName` when available and fall back to random bytes.
+/// we derive three bytes from the host name (via `gethostname(2)`) and fall back to random bytes.
 /// The exact machine-ID value never affects validity (any three bytes are legal), so this stays
 /// format-faithful while remaining dependency-free on Apple platforms.
 public enum Identifier {

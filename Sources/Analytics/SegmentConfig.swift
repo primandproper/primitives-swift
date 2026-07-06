@@ -7,8 +7,10 @@ import Foundation
 /// conventions, only the JSON contract survives, with the coding key preserved so a Go-authored config
 /// still decodes.
 ///
-/// This config is fully faithful — only the reporter it configures
-/// (``SourceConfig/provideCollector()``) gets the salsa20 treatment, since Segment has no iOS SDK.
+/// This config drives a real ``SegmentEventReporter``: a thin URLSession + Codable upload to Segment's
+/// `POST /v1/batch` HTTP API. Segment *does* ship a first-party Swift SDK (`analytics-swift`) — the port
+/// reimplements the batch call directly only because of this port's no-vendor-SDK policy, not for lack
+/// of one.
 public struct SegmentConfig: Codable, Sendable, Equatable {
   public var apiToken: String
 

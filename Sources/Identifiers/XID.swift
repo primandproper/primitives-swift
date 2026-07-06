@@ -35,7 +35,7 @@ final class XIDGenerator: @unchecked Sendable {
   /// Builds the raw 12-byte xid: 4-byte big-endian seconds timestamp, 3-byte machine ID,
   /// 2-byte big-endian PID, 3-byte big-endian counter.
   func newRawID() -> [UInt8] {
-    let timestamp = UInt32(Date().timeIntervalSince1970)
+    let timestamp = Self.timestamp(forUnixSeconds: Date().timeIntervalSince1970)
 
     lock.lock()
     counter = (counter &+ 1) & 0xFF_FFFF
@@ -62,20 +62,35 @@ final class XIDGenerator: @unchecked Sendable {
     Self.encode(newRawID())
   }
 
+  /// Converts a Unix timestamp (seconds since 1970, as `Date.timeIntervalSince1970` yields) to the
+  /// 4-byte big-endian prefix xid uses. Go computes `uint32(time.Now().Unix())`, which wraps modulo
+  /// 2^32 for pre-1970 (negative) and post-2106 timestamps rather than trapping. Plain
+  /// `UInt32(_:)` would trap on those out-of-range values; `truncatingIfNeeded` keeps the low 32
+  /// bits, reproducing Go's two's-complement wrap exactly.
+  static func timestamp(forUnixSeconds seconds: Double) -> UInt32 {
+    UInt32(truncatingIfNeeded: Int64(seconds))
+  }
+
   private static func readMachineID() -> (UInt8, UInt8, UInt8) {
-    let host = ProcessInfo.processInfo.hostName
-    if let data = host.data(using: .utf8), data.count >= 3 {
-      // Cheap FNV-1a over the hostname to spread it across three bytes; xid uses MD5, but only the
-      // format matters for validity, so we avoid pulling in a crypto dependency.
-      var hash: UInt32 = 2_166_136_261
-      for byte in data {
-        hash = (hash ^ UInt32(byte)) &* 16_777_619
+    // Read the host name via gethostname(2), a cheap local syscall. ProcessInfo.hostName can block
+    // for seconds on a reverse-DNS lookup (possibly on the main thread through the lazy `shared`
+    // init), so we avoid it here.
+    var buffer = [CChar](repeating: 0, count: 256)
+    if gethostname(&buffer, buffer.count) == 0 {
+      let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+      if bytes.count >= 3 {
+        // Cheap FNV-1a over the hostname to spread it across three bytes; xid uses MD5, but only the
+        // format matters for validity, so we avoid pulling in a crypto dependency.
+        var hash: UInt32 = 2_166_136_261
+        for byte in bytes {
+          hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return (
+          UInt8(truncatingIfNeeded: hash >> 16),
+          UInt8(truncatingIfNeeded: hash >> 8),
+          UInt8(truncatingIfNeeded: hash)
+        )
       }
-      return (
-        UInt8(truncatingIfNeeded: hash >> 16),
-        UInt8(truncatingIfNeeded: hash >> 8),
-        UInt8(truncatingIfNeeded: hash)
-      )
     }
     return (
       UInt8.random(in: .min ... .max),

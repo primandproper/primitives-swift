@@ -138,6 +138,10 @@ public struct TOTP: Sendable {
   /// `uint64(math.Floor(float64(t.Unix()) / float64(period)))`.
   private func counter(for date: Date) -> UInt64 {
     let seconds = floor(date.timeIntervalSince1970)
+    // Clamp pre-1970 dates to the epoch (counter 0): a negative interval would trap `UInt64`'s
+    // failable-less `Double` initializer. The wall-clock callers never reach here, but an explicit
+    // `at:` vector could hand us a pre-epoch `Date`, and a crash is never the right answer for one.
+    guard seconds >= 0 else { return 0 }
     return UInt64(floor(seconds / Double(period)))
   }
 
@@ -166,7 +170,8 @@ public struct TOTP: Sendable {
     let symmetricKey = SymmetricKey(data: key)
     switch algorithm {
     case .sha1:
-      return Array(CryptoKit.HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey))
+      return Array(
+        CryptoKit.HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey))
     case .sha256:
       return Array(CryptoKit.HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey))
     case .sha512:

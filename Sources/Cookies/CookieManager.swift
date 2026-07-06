@@ -91,6 +91,11 @@ public struct CookieManager: Sendable {
     Int64(Date().timeIntervalSince1970)
   }
 
+  /// securecookie's default decode `MaxAge` (`86400 * 30`), applied when no lifetime is configured so
+  /// an unset lifetime still bounds the replay window. Mirrors Go's `NewCookieManager`, which leaves
+  /// `securecookie`'s 30-day default in place and only overrides it when `Lifetime > 0`.
+  static let defaultDecodeMaxAgeSeconds: Int64 = 86_400 * 30
+
   /// Serializes and signs `value`, returning the encoded cookie value. Wraps `securecookie.Encode`
   /// (signing only — see the type doc on the deferred encryption path).
   ///
@@ -125,7 +130,8 @@ public struct CookieManager: Sendable {
   ///
   /// - Throws: ``CookieError/malformedValue`` for a structurally bad value, ``CookieError/macInvalid``
   ///   for a failed signature (tampering, wrong key, or wrong `name`), ``CookieError/timestampInvalid``
-  ///   for an unparseable timestamp, ``CookieError/expired`` if older than the configured lifetime, or
+  ///   for an unparseable timestamp, ``CookieError/expired`` if older than the configured lifetime
+  ///   (or securecookie's 30-day default when no lifetime is set), or
   ///   ``CookieError/deserializationFailed`` if the payload doesn't decode into `Value`.
   public func decode<Value: Decodable>(
     name: String, from encoded: String, as _: Value.Type = Value.self
@@ -159,9 +165,12 @@ public struct CookieManager: Sendable {
     guard let timestamp = Int64(String(decoding: datePart, as: UTF8.self)) else {
       throw .timestampInvalid
     }
-    // Enforce the lifetime bound only when set, matching securecookie's `maxAge != 0` guard.
-    let maxAge = config.lifetime.wholeSeconds
-    if maxAge > 0 && timestamp < now() - maxAge {
+    // securecookie always bounds the MAC-protected timestamp: its `maxAge` defaults to 30 days and
+    // Go's `NewCookieManager` only overrides that default when `Lifetime > 0`. Fall back to the same
+    // 30-day bound for an unset lifetime rather than leaving the replay window open.
+    let configuredSeconds = config.lifetime.wholeSeconds
+    let maxAge = configuredSeconds > 0 ? configuredSeconds : Self.defaultDecodeMaxAgeSeconds
+    if timestamp < now() - maxAge {
       throw .expired
     }
 

@@ -20,7 +20,8 @@ struct NoopEventReporterTests {
 
   @Test("eventOccurred returns without throwing")
   func eventOccurred() async throws {
-    try await reporter.eventOccurred(event: "event_name", userID: "user123", properties: ["key": "value"])
+    try await reporter.eventOccurred(
+      event: "event_name", userID: "user123", properties: ["key": "value"])
   }
 
   @Test("eventOccurredAnonymous returns without throwing")

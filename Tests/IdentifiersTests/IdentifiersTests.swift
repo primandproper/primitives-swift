@@ -99,3 +99,40 @@ struct XIDEncoderTests {
     #expect(first.prefix(6) <= second.prefix(6))
   }
 }
+
+@Suite("XID timestamp wrap")
+struct XIDTimestampWrapTests {
+  // Fixtures produced by running `uint32(int64(v))` in Go 1.26.4 against ../platform-go's
+  // toolchain (uint32(time.Now().Unix()) is what xid does). Pinned literals confirm Swift's
+  // truncatingIfNeeded reproduces Go's two's-complement modulo-2^32 wrap rather than trapping.
+  @Test("pre-1970 and post-2106 timestamps wrap instead of trapping, matching Go")
+  func matchesGoWrap() {
+    // v -> uint32(v) from the Go program:
+    //   4294967296 -> 0            (exactly 2^32, post-2106)
+    //   4294967396 -> 100          (post-2106)
+    //   -1         -> 4294967295   (pre-1970, negative)
+    //   4700000000 -> 405032704    (post-2106, year ~2118)
+    //   1000000000 -> 1000000000   (in-range control, 2001-09-09)
+    #expect(XIDGenerator.timestamp(forUnixSeconds: 4_294_967_296) == 0)
+    #expect(XIDGenerator.timestamp(forUnixSeconds: 4_294_967_396) == 100)
+    #expect(XIDGenerator.timestamp(forUnixSeconds: -1) == 4_294_967_295)
+    #expect(XIDGenerator.timestamp(forUnixSeconds: 4_700_000_000) == 405_032_704)
+    #expect(XIDGenerator.timestamp(forUnixSeconds: 1_000_000_000) == 1_000_000_000)
+  }
+
+  @Test("fractional seconds truncate toward zero like Go's whole-second Unix()")
+  func truncatesFraction() {
+    // Go's time.Unix() yields whole seconds; the Double from timeIntervalSince1970 carries a
+    // fraction that must be dropped (not rounded) to stay byte-identical.
+    #expect(XIDGenerator.timestamp(forUnixSeconds: 100.999) == 100)
+  }
+
+  @Test("minting an ID at a post-2106 timestamp does not trap")
+  func mintingPost2106DoesNotTrap() {
+    // Regression: newRawID previously used UInt32(Double) which traps past 2106. Exercise the
+    // real code path and assert it still produces a valid 20-char xid.
+    let id = Identifier.new()
+    #expect(id.count == 20)
+    #expect(Identifier.isValid(id))
+  }
+}

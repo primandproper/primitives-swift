@@ -163,7 +163,9 @@ struct DescriptionTests {
 struct CodableTests {
   @Test("marshals as a bare number, including as a struct field")
   func marshal() throws {
-    #expect(String(decoding: try JSONEncoder().encode(Bitmask(permRead, permWrite)), as: UTF8.self) == "3")
+    #expect(
+      String(decoding: try JSONEncoder().encode(Bitmask(permRead, permWrite)), as: UTF8.self) == "3"
+    )
     #expect(String(decoding: try JSONEncoder().encode(Bitmask<UInt8>()), as: UTF8.self) == "0")
 
     struct Wrapper: Codable { var perms: Bitmask<UInt8> }

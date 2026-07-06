@@ -72,7 +72,7 @@ public struct CircuitBreakerConfig: Codable, Sendable, Equatable {
     logger: any Logger = NoopLogger(),
     metrics: any MetricsProvider = NoopMetricsProvider(),
     tags: [String: String] = [:],
-    resetTimeout: Duration = StandardCircuitBreaker.defaultResetTimeout
+    resetTimeout: Duration = StandardCircuitBreaker<ContinuousClock>.defaultResetTimeout
   ) -> any CircuitBreaker {
     let cfg = ensuringDefaults()
 
@@ -105,7 +105,8 @@ public struct CircuitBreakerConfig: Codable, Sendable, Equatable {
     // partial JSON object unmarshals into a Go struct.
     name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
     errorRate = try c.decodeIfPresent(Double.self, forKey: .errorRate) ?? 0
-    minimumSampleThreshold = try c.decodeIfPresent(UInt64.self, forKey: .minimumSampleThreshold) ?? 0
+    minimumSampleThreshold =
+      try c.decodeIfPresent(UInt64.self, forKey: .minimumSampleThreshold) ?? 0
   }
 }
 

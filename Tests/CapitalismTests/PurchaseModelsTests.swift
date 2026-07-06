@@ -20,7 +20,8 @@ struct PurchaseModelsTests {
     let original = Entitlement(
       productID: "com.example.pro", transactionID: "42",
       purchaseDate: Date(timeIntervalSince1970: 1_700_000_000), expirationDate: nil, isActive: true)
-    let decoded = try JSONDecoder().decode(Entitlement.self, from: try JSONEncoder().encode(original))
+    let decoded = try JSONDecoder().decode(
+      Entitlement.self, from: try JSONEncoder().encode(original))
     #expect(decoded == original)
     #expect(decoded.id == "42")  // Identifiable keys off transactionID
   }
@@ -42,10 +43,10 @@ struct PurchaseModelsTests {
     let b = Entitlement(
       productID: "p", transactionID: "2", purchaseDate: Date(timeIntervalSince1970: 0),
       expirationDate: nil, isActive: true)
-    #expect(PurchaseResult.success(a) == .success(a))
-    #expect(PurchaseResult.success(a) != .success(b))
+    #expect(PurchaseResult.success(a, finish: {}) == .success(a, finish: {}))
+    #expect(PurchaseResult.success(a, finish: {}) != .success(b, finish: {}))
     #expect(PurchaseResult.pending != .userCancelled)
-    #expect(PurchaseResult.success(a) != .pending)
+    #expect(PurchaseResult.success(a, finish: {}) != .pending)
   }
 
   @Test("PurchaseOptions defaults are nil")

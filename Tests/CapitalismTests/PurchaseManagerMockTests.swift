@@ -38,13 +38,14 @@ struct PurchaseManagerMockTests {
     let entitlement = sampleEntitlement()
     let mock = PurchaseManagerMock(
       productsHandler: { _ in [product] },
-      purchaseHandler: { _, _ in .success(entitlement) },
+      purchaseHandler: { _, _ in .success(entitlement, finish: {}) },
       currentEntitlementsHandler: { [entitlement] },
       restorePurchasesHandler: {}
     )
 
     #expect(try await mock.products(for: ["com.example.pro"]) == [product])
-    #expect(try await mock.purchase(productID: "com.example.pro") == .success(entitlement))
+    #expect(
+      try await mock.purchase(productID: "com.example.pro") == .success(entitlement, finish: {}))
     #expect(await mock.currentEntitlements() == [entitlement])
     try await mock.restorePurchases()
   }

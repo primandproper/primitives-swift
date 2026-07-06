@@ -25,6 +25,10 @@ public enum JWTError: Error, Equatable, Sendable {
   case invalidIssuer
   /// The `aud` claim did not contain the expected audience. Mirrors Go's `ErrInvalidAudience`.
   case invalidAudience
+  /// The token's header carried a `crit` (critical extensions) parameter. RFC 7515 §4.1.11 requires a
+  /// recipient to reject a token whose `crit` lists an extension it does not understand — and this
+  /// parser implements no header extensions, so any `crit` is fatal rather than silently ignored.
+  case unsupportedCriticalHeader
 }
 
 extension JWTError: LocalizedError {
@@ -39,6 +43,8 @@ extension JWTError: LocalizedError {
     case .notYetValid: return "token is not yet valid"
     case .invalidIssuer: return "token issuer is not valid"
     case .invalidAudience: return "token audience is not valid"
+    case .unsupportedCriticalHeader:
+      return "token carries an unsupported critical (crit) header extension"
     }
   }
 }
@@ -60,10 +66,14 @@ public enum JWTAlgorithm: String, Sendable {
 /// (`P256`) and Security (`SecKey`) respectively and are the other two schemes a client realistically
 /// meets from an asymmetric identity provider — but they have no counterpart in the Go origin.
 ///
-/// - Note: This type is intentionally **not** `Sendable`: the `rsa` case wraps a `SecKey`
-///   (a non-`Sendable` CoreFoundation type). ``JWTParser`` is used synchronously, so no isolation
-///   boundary is crossed. Keep it that way; do not stash a parser in an actor or `Task`.
-public enum JWTVerificationKey {
+/// - Note: `Sendable` conformance here is `@unchecked`: the `rsa` case wraps a `SecKey`, a
+///   CoreFoundation type the compiler cannot verify as `Sendable`. This is sound in practice —
+///   `SecKey` is immutable once created, is never mutated by this type, and is used exclusively as
+///   the input to `SecKeyVerifySignature`, a synchronous, read-only verification call that Apple's
+///   Security framework treats as safe to invoke from multiple threads/queues concurrently. No
+///   mutable state is shared or crosses an isolation boundary, so treating this type (and the
+///   ``JWTParser`` that stores it) as `Sendable` does not introduce a data race.
+public enum JWTVerificationKey: @unchecked Sendable {
   /// HS256 shared secret. The verifier recomputes HMAC-SHA256 over the signing input.
   case hmac(SymmetricKey)
   /// ES256 public key.
@@ -96,11 +106,17 @@ public enum JWTVerificationKey {
 ///
 /// - Important: The reference time for `exp`/`nbf` is **injected** via `at:` so tests can pin fixed
 ///   instants against forged expiry. ``parse(_:)`` reads `Date()` at the edge.
-public struct JWTParser {
+///
+/// - Note: `Sendable` by inheritance from ``JWTVerificationKey``'s `@unchecked Sendable`
+///   conformance; all other stored properties are plain value types. This lets a parser (HMAC/ES256
+///   included) be captured across isolation boundaries — stored in an actor, or handed to a `Task` /
+///   `@Sendable` closure — even though the `.rsa` case internally holds a non-`Sendable` `SecKey`.
+public struct JWTParser: Sendable {
   private let key: JWTVerificationKey
   private let expectedIssuer: String?
   private let expectedAudience: String?
   private let requireExpiration: Bool
+  private let leeway: TimeInterval
 
   /// - Parameters:
   ///   - key: the verification material; its scheme pins the accepted `alg` header.
@@ -108,16 +124,23 @@ public struct JWTParser {
   ///   - expectedAudience: if non-nil, `aud` must contain this. Matches the Go signer's `WithAudience`.
   ///   - requireExpiration: if `true` (default), a token without `exp` is rejected, matching the Go
   ///     signer's `WithExpirationRequired`.
+  ///   - leeway: clock-drift tolerance (default `0`) applied to the time-based claims, mirroring
+  ///     golang-jwt's `WithLeeway`. `exp` is accepted while `now < exp + leeway`, and `nbf` while
+  ///     `now >= nbf − leeway`, so a small skew between the signer's and verifier's clocks doesn't
+  ///     spuriously reject an otherwise-valid token. Must be non-negative.
   public init(
     key: JWTVerificationKey,
     expectedIssuer: String? = nil,
     expectedAudience: String? = nil,
-    requireExpiration: Bool = true
+    requireExpiration: Bool = true,
+    leeway: TimeInterval = 0
   ) {
+    precondition(leeway >= 0, "JWT leeway must be non-negative")
     self.key = key
     self.expectedIssuer = expectedIssuer
     self.expectedAudience = expectedAudience
     self.requireExpiration = requireExpiration
+    self.leeway = leeway
   }
 
   /// Parses and verifies `token` against the reference time `date`, returning its claims on success.
@@ -137,7 +160,7 @@ public struct JWTParser {
       throw JWTError.malformed
     }
 
-    try verifyAlgorithm(headerData: headerData)
+    try verifyHeader(headerData: headerData)
 
     // The signing input is the raw, still-encoded "header.payload" ASCII, per RFC 7515.
     let signingInput = Data((headerSegment + "." + payloadSegment).utf8)
@@ -146,6 +169,7 @@ public struct JWTParser {
     }
 
     let claims = try decodeClaims(payloadData)
+    try validateClaimShapes(claims)
     try validateClaims(claims, at: date)
     return claims
   }
@@ -157,27 +181,62 @@ public struct JWTParser {
 
   // MARK: - Steps
 
-  private func verifyAlgorithm(headerData: Data) throws {
-    struct Header: Decodable { let alg: String }
-    guard let header = try? JSONDecoder().decode(Header.self, from: headerData) else {
+  private func verifyHeader(headerData: Data) throws {
+    // Decode the full header (not just `alg`) so a `crit` parameter can be detected and rejected.
+    guard let header = try? JSONDecoder().decode([String: JSONValue].self, from: headerData) else {
+      throw JWTError.malformed
+    }
+
+    // RFC 7515 §4.1.11: `crit` enumerates header extensions the recipient MUST understand and process.
+    // This parser implements none, so a token carrying `crit` (of any shape) must be rejected rather
+    // than ignoring an instruction the producer marked as critical.
+    if header["crit"] != nil {
+      throw JWTError.unsupportedCriticalHeader
+    }
+
+    guard let alg = header["alg"]?.stringValue else {
       throw JWTError.malformed
     }
     let expected = key.algorithm.rawValue
-    guard header.alg == expected else {
-      throw JWTError.algorithmMismatch(expected: expected, found: header.alg)
+    guard alg == expected else {
+      throw JWTError.algorithmMismatch(expected: expected, found: alg)
+    }
+  }
+
+  /// Rejects payloads whose time or audience claims are present but wrongly typed — cases the lenient
+  /// accessors on ``JWTClaims`` would otherwise silently treat as "absent"/drop.
+  private func validateClaimShapes(_ claims: JWTClaims) throws {
+    // A present-but-non-numeric `exp`/`nbf` (e.g. a JSON string) is malformed, not missing: golang-jwt's
+    // typed `NumericDate` decode fails on it, and treating it as absent could let a required-exp token
+    // through as "no expiry" or ignore a not-before guard.
+    for claim in ["exp", "nbf"] {
+      if let value = claims.raw[claim], value.doubleValue == nil {
+        throw JWTError.malformed
+      }
+    }
+
+    // RFC 7519 §4.1.3: every element of an array-valued `aud` must be a string. The `audience` accessor
+    // silently `compactMap`s non-strings away; reject the token instead so a malformed `aud` can't be
+    // partially honored.
+    if case .array(let elements)? = claims.raw["aud"],
+      elements.contains(where: { $0.stringValue == nil })
+    {
+      throw JWTError.malformed
     }
   }
 
   private func verifySignature(_ signature: Data, over signingInput: Data) -> Bool {
     switch key {
     case .hmac(let symmetricKey):
-      let expected = CryptoKit.HMAC<SHA256>.authenticationCode(for: signingInput, using: symmetricKey)
+      let expected = CryptoKit.HMAC<SHA256>.authenticationCode(
+        for: signingInput, using: symmetricKey)
       return constantTimeEqual(Array(expected), Array(signature))
 
     case .ecdsaP256(let publicKey):
       // JWS ES256 signatures are the raw r‖s concatenation (RFC 7518 §3.4), which is exactly
       // CryptoKit's `rawRepresentation`.
-      guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature) else {
+      guard let ecdsaSignature = try? P256.Signing.ECDSASignature(rawRepresentation: signature)
+      else {
         return false
       }
       return publicKey.isValidSignature(ecdsaSignature, for: signingInput)
@@ -205,13 +264,13 @@ public struct JWTParser {
   private func validateClaims(_ claims: JWTClaims, at date: Date) throws {
     // Order mirrors golang-jwt's validator: expiry first, then not-before, then issuer/audience.
     if let expiresAt = claims.expiresAt {
-      // Valid only while `date` is strictly before `exp`; at/after `exp` the token is expired.
-      if !(date < expiresAt) { throw JWTError.expired }
+      // Valid only while `date` is strictly before `exp` (+ leeway); at/after that the token is expired.
+      if !(date < expiresAt.addingTimeInterval(leeway)) { throw JWTError.expired }
     } else if requireExpiration {
       throw JWTError.missingExpiration
     }
 
-    if let notBefore = claims.notBefore, date < notBefore {
+    if let notBefore = claims.notBefore, date < notBefore.addingTimeInterval(-leeway) {
       throw JWTError.notYetValid
     }
 

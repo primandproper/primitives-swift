@@ -3,11 +3,10 @@ import Foundation
 /// Configures the feature flag manager, ported from platform-go's `featureflagscfg.Config`
 /// (`featureflags/config/config.go`), including its `ValidateWithContext` and `ProvideFeatureFlagManager`.
 ///
-/// Go's struct also carries a top-level `CircuitBreaker circuitbreakingcfg.Config` field, dropped here for
-/// the same reason as ``LaunchDarklyConfig``/``PostHogConfig``: it only fed the circuit breaker handed to
-/// a real vendor backend, and this platform never builds one (see ``makeFeatureFlagManager()``).
-/// `Codable` ignoring unrecognized keys means a Go-authored payload's `circuitBreakerConfig` object still
-/// decodes fine without a matching field.
+/// Go's struct also carries a *top-level* `CircuitBreaker circuitbreakingcfg.Config` field, still dropped
+/// here: `Codable` ignoring unrecognized keys means a Go-authored payload's top-level `circuitBreakerConfig`
+/// object decodes fine without a matching field. (The breaker that actually guards the live PostHog backend
+/// is configured by ``PostHogConfig/circuitBreaker`` instead, which *is* carried — see that type.)
 ///
 /// ``provider`` stays a raw `String` rather than a ``FeatureFlagProvider``, the same move
 /// ``Encoding``'s `EncodingConfig` makes for its content type: Go treats `""` (unset) as a valid,
@@ -60,22 +59,31 @@ public struct FeatureFlagsConfig: Codable, Sendable, Equatable {
 
   /// Builds the configured ``FeatureFlagManager``, ported from Go's `Config.ProvideFeatureFlagManager`.
   ///
-  /// Go's factory also threaded a `Logger`, `TracerProvider`, `MetricsProvider`, `*http.Client`, and
-  /// `CircuitBreaker` into the real backends it could construct. None of that is needed here: both
-  /// recognized providers are vendor server SDKs with no iOS analogue (see ``FeatureFlagProvider``), so
-  /// selecting either throws immediately rather than opening a client, matching the "salsa20 treatment"
-  /// this port applies to other vendor-SDK seams (``Cryptography``'s `EncryptionProvider.salsa20`,
-  /// ``Encoding``'s non-JSON content types).
+  /// The `"posthog"` case returns a **live** ``PostHogFeatureFlagManager``: a thin native backend that
+  /// talks to PostHog's remote decide endpoint over `URLSession` + `Codable` (see that type), with the
+  /// circuit breaker built from ``PostHogConfig/circuitBreaker`` threaded in to guard its calls. As in
+  /// Go, a `"posthog"` provider with a `nil` sub-config is an error (Go's
+  /// `posthog.NewFeatureFlagManager(nil, …)` returns `ErrNilConfig`); here it throws
+  /// ``FeatureFlagsError/missingProviderConfig(_:)``.
+  ///
+  /// `"launchdarkly"` still throws ``FeatureFlagsError/unsupportedProvider(_:)``: LaunchDarkly's mobile
+  /// SDK needs a *mobile* key, which ``LaunchDarklyConfig/sdkKey`` (a *server* SDK key) is not — see the
+  /// note on that property. Wiring it before that distinction is resolved would ship a broken client, so
+  /// the seam stays a deliberate throw (the "salsa20 treatment" this port applies elsewhere).
   ///
   /// Like Go, this does **not** call ``validate()`` first: an empty or unrecognized provider string
   /// resolves to ``NoopFeatureFlagManager`` without error, matching the `default` case of Go's `switch`.
-  /// - Throws: ``FeatureFlagsError/unsupportedProvider(_:)`` when ``provider`` names a recognized backend.
+  /// - Throws: ``FeatureFlagsError/unsupportedProvider(_:)`` for LaunchDarkly, or
+  ///   ``FeatureFlagsError/missingProviderConfig(_:)`` when a `"posthog"` provider has no sub-config.
   public func makeFeatureFlagManager() throws -> any FeatureFlagManager {
     switch provider.trimmingCharacters(in: .whitespaces).lowercased() {
     case FeatureFlagProvider.launchDarkly.rawValue:
       throw FeatureFlagsError.unsupportedProvider(.launchDarkly)
     case FeatureFlagProvider.postHog.rawValue:
-      throw FeatureFlagsError.unsupportedProvider(.postHog)
+      guard let postHog else {
+        throw FeatureFlagsError.missingProviderConfig(.postHog)
+      }
+      return PostHogFeatureFlagManager(config: postHog)
     default:
       return NoopFeatureFlagManager()
     }

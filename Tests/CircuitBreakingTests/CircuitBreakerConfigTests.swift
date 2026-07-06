@@ -108,7 +108,7 @@ struct CircuitBreakerConfigProvideTests {
   @Test("an unset name still yields a real breaker (defaults applied before validation)")
   func unsetNameYieldsReal() {
     let cb = CircuitBreakerConfig(name: "").provideCircuitBreaker()
-    #expect(cb is StandardCircuitBreaker)
+    #expect(cb is StandardCircuitBreaker<ContinuousClock>)
   }
 
   @Test("an out-of-range error rate degrades to a noop breaker")
@@ -148,16 +148,17 @@ struct KeyedCircuitBreakerConfigTests {
     #expect(json["base"] != nil)
   }
 
-  @Test("provides a partitioned breaker: registered keys get dedicated breakers, others share global")
+  @Test(
+    "provides a partitioned breaker: registered keys get dedicated breakers, others share global")
   func providesPartitioned() {
     let cfg = KeyedCircuitBreakerConfig(keys: ["123"], base: .init(name: "kb"))
     let keyed = cfg.provideKeyedCircuitBreaker()
 
     #expect(keyed is PartitionedCircuitBreaker)
 
-    let dedicated = keyed.breaker(for: "123") as? StandardCircuitBreaker
-    let globalA = keyed.breaker(for: "456") as? StandardCircuitBreaker
-    let globalB = keyed.breaker(for: "789") as? StandardCircuitBreaker
+    let dedicated = keyed.breaker(for: "123") as? StandardCircuitBreaker<ContinuousClock>
+    let globalA = keyed.breaker(for: "456") as? StandardCircuitBreaker<ContinuousClock>
+    let globalB = keyed.breaker(for: "789") as? StandardCircuitBreaker<ContinuousClock>
 
     #expect(dedicated !== globalA)  // a registered key gets its own breaker
     #expect(globalA === globalB)  // unregistered keys share the global one

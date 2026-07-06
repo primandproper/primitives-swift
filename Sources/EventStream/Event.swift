@@ -58,7 +58,11 @@ extension Event: Codable {
 /// is `Decodable`-only; this needs both directions to re-serialize a payload on encode).
 enum RawJSON: Codable, Sendable, Equatable {
   case string(String)
-  case number(Double)
+  // `Decimal`, not `Double`: `Double` corrupts any JSON number Go's `json.RawMessage` would carry
+  // verbatim — an int64 past 2^53 (a snowflake id) rounds, and a high-precision decimal truncates.
+  // `JSONDecoder` builds a `Decimal` from the scanned digits (not via `Double`), and `JSONEncoder`
+  // re-emits those digits, so a payload number round-trips to the same value it went in as.
+  case number(Decimal)
   case bool(Bool)
   case null
   case array([RawJSON])
@@ -71,7 +75,7 @@ enum RawJSON: Codable, Sendable, Equatable {
       self = .null
     } else if let bool = try? container.decode(Bool.self) {
       self = .bool(bool)
-    } else if let number = try? container.decode(Double.self) {
+    } else if let number = try? container.decode(Decimal.self) {
       self = .number(number)
     } else if let string = try? container.decode(String.self) {
       self = .string(string)
@@ -80,7 +84,8 @@ enum RawJSON: Codable, Sendable, Equatable {
     } else if let object = try? container.decode([String: RawJSON].self) {
       self = .object(object)
     } else {
-      throw DecodingError.dataCorruptedError(in: container, debugDescription: "unsupported JSON value")
+      throw DecodingError.dataCorruptedError(
+        in: container, debugDescription: "unsupported JSON value")
     }
   }
 
