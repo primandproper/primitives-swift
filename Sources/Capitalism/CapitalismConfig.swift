@@ -18,7 +18,7 @@ public struct CapitalismConfig: Codable, Sendable, Equatable {
   /// ``CapitalismProvider``) so an empty/unrecognized value resolves leniently — matching the Go
   /// origin's `switch strings.ToLower(cfg.Provider)`. See ``resolvedProvider``.
   public var provider: String
-  /// Whether payments are enabled. When `false`, ``provideManager(observer:)`` returns a
+  /// Whether payments are enabled. When `false`, ``provideManager(pillars:)`` returns a
   /// ``NoopPurchaseManager`` and ``validate()`` is a no-op — mirrors Go's `if !cfg.Enabled`.
   public var enabled: Bool
   public var storeKit: StoreKitConfig?
@@ -66,7 +66,7 @@ public struct CapitalismConfig: Codable, Sendable, Equatable {
   ///
   /// This is slightly stricter than the Go origin, whose `validation.In(StripeProvider)` skipped an
   /// empty provider string (leaving it to fail later at construction). Here an enabled config with an
-  /// empty/unknown provider fails validation up front, since ``provideManager(observer:)`` would throw
+  /// empty/unknown provider fails validation up front, since ``provideManager(pillars:)`` would throw
   /// anyway.
   public func validate() throws {
     guard enabled else { return }
@@ -99,7 +99,7 @@ public struct CapitalismConfig: Codable, Sendable, Equatable {
   /// - ``CapitalismProvider/revenueCat`` throws ``CapitalismError/unsupportedProvider(_:)`` — the
   ///   salsa20 treatment (its config must still be present, matching Go's "provider configured but
   ///   config is nil" guard).
-  public func provideManager(observer: any Observer) throws -> any PurchaseManager {
+  public func provideManager(pillars: Pillars) throws -> any PurchaseManager {
     guard enabled else { return NoopPurchaseManager() }
 
     guard let resolved = resolvedProvider else {
@@ -108,6 +108,7 @@ public struct CapitalismConfig: Codable, Sendable, Equatable {
 
     switch resolved {
     case .storeKit:
+      let observer = makeObserver(StoreKitPurchaseManager.o11yName, pillars)
       return StoreKitPurchaseManager(
         productIdentifiers: storeKit?.productIdentifiers ?? [], observer: observer)
     case .revenueCat:

@@ -4,7 +4,7 @@ import Foundation
 /// carried its provider credentials.
 ///
 /// This config is fully faithful and decodes cleanly — only the manager it would configure gets the
-/// salsa20 treatment (``CapitalismConfig/provideManager(observer:)`` throws
+/// salsa20 treatment (``CapitalismConfig/provideManager(pillars:)`` throws
 /// ``CapitalismError/unsupportedProvider(_:)``), exactly as ``Analytics``'s `SegmentConfig` is faithful
 /// while its reporter is stubbed. A consuming app that adds the RevenueCat SDK reads this ``apiKey`` to
 /// `Purchases.configure(withAPIKey:)` inside its own ``PurchaseManager`` adapter.

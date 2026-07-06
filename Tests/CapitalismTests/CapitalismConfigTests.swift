@@ -6,7 +6,9 @@ import Testing
 
 @Suite("CapitalismConfig")
 struct CapitalismConfigTests {
-  private var observer: any Observer { recordingObserver("test") }
+  private func pillars() -> Pillars {
+    Pillars(logger: NoopLogger(), tracer: NoopTracer(), metrics: NoopMetricsProvider())
+  }
 
   // MARK: resolvedProvider
 
@@ -70,14 +72,14 @@ struct CapitalismConfigTests {
 
   @Test("a disabled config provides a noop manager")
   func disabledProvidesNoop() throws {
-    let manager = try CapitalismConfig(enabled: false).provideManager(observer: observer)
+    let manager = try CapitalismConfig(enabled: false).provideManager(pillars: pillars())
     #expect(manager is NoopPurchaseManager)
   }
 
   @Test("a StoreKit config provides a live StoreKit manager")
   func storeKitProvidesLive() throws {
     let manager = try CapitalismConfig(provider: "storekit", enabled: true).provideManager(
-      observer: observer)
+      pillars: pillars())
     #expect(manager is StoreKitPurchaseManager)
   }
 
@@ -86,7 +88,7 @@ struct CapitalismConfigTests {
     #expect(throws: CapitalismError.unsupportedProvider(.revenueCat)) {
       _ = try CapitalismConfig(
         provider: "revenuecat", enabled: true, revenueCat: RevenueCatConfig(apiKey: "appl_xxx")
-      ).provideManager(observer: observer)
+      ).provideManager(pillars: pillars())
     }
   }
 
@@ -94,14 +96,14 @@ struct CapitalismConfigTests {
   func revenueCatMissingConfig() {
     #expect(throws: CapitalismConfigError.missingProviderConfig(.revenueCat)) {
       _ = try CapitalismConfig(provider: "revenuecat", enabled: true).provideManager(
-        observer: observer)
+        pillars: pillars())
     }
   }
 
   @Test("an enabled config with an unknown provider throws")
   func provideUnknownProvider() {
     #expect(throws: CapitalismConfigError.unknownProvider("paypal")) {
-      _ = try CapitalismConfig(provider: "paypal", enabled: true).provideManager(observer: observer)
+      _ = try CapitalismConfig(provider: "paypal", enabled: true).provideManager(pillars: pillars())
     }
   }
 
