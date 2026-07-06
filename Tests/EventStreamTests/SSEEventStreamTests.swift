@@ -80,6 +80,36 @@ struct SSEEventStreamHermeticTests {
   }
 
   @Test(
+    "a transport error partway through the byte source surfaces to the consumer",
+    .timeLimit(.minutes(1)))
+  func midStreamTransportErrorSurfaces() async throws {
+    // A throwing byte source models a connection that delivers a complete frame and then drops mid-stream
+    // — the hermetic analogue of `URLSession.AsyncBytes` erroring an iteration after some body has arrived.
+    // The first event must be delivered, and the injected transport error must then surface from the next
+    // `next()`, finishing `events` by throwing rather than silently ending it.
+    let (bytes, continuation) = AsyncThrowingStream<UInt8, any Error>.makeStream()
+    for byte in "event: first\ndata: {\"n\":1}\n\n".utf8 {
+      continuation.yield(byte)
+    }
+
+    let stream = SSEEventStream()
+    await stream.start(bytes: bytes, networkTask: nil, observer: recordingObserver("test"))
+    defer { Task { await stream.close() } }
+
+    var iterator = stream.events.makeAsyncIterator()
+    let event = try #require(try await iterator.next())
+    #expect(event.type == "first")
+
+    // The connection now fails partway through the stream; the buffered frame was already drained above,
+    // so this terminal error is the next thing the pump sees.
+    continuation.finish(throwing: URLError(.networkConnectionLost))
+
+    await #expect(throws: (any Error).self) {
+      _ = try await iterator.next()
+    }
+  }
+
+  @Test(
     "abandoning the consumer tears down the pump loop via events.onTermination",
     .timeLimit(.minutes(1)))
   func abandoningConsumerTearsDownPump() async throws {

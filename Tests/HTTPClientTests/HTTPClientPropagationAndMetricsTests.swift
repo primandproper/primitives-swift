@@ -112,6 +112,31 @@ struct HTTPClientFailureMetricsTests {
     #expect(tags["error"] == "connection")
   }
 
+  @Test("an unclassified transport fault falls back to the error=transport bucket")
+  func unclassifiedTransportFaultIsCounted() async throws {
+    let token = UUID().uuidString
+    // Neither a timeout nor one of errorReason's connection codes, so it lands in the default `transport`
+    // bucket — the branch the timeout/connection cases above don't reach.
+    StubURLProtocol.register(token) { _ in .fail(URLError(.badServerResponse)) }
+    defer { StubURLProtocol.unregister(token) }
+
+    let metrics = RecordingMetricsProvider()
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"), metrics: metrics)
+
+    await #expect(throws: (any Error).self) {
+      _ = try await client.perform(stubbedRequest(token: token))
+    }
+
+    let events = requestCounters(metrics)
+    #expect(events.count == 1)
+    let tags = try #require(events.first?.tags)
+    #expect(tags["outcome"] == "error")
+    #expect(tags["error"] == "transport")
+    #expect(tags["method"] == "GET")
+    #expect(tags["status"] == nil)
+  }
+
   @Test("an open breaker increments the requests counter tagged outcome=circuit_broken")
   func circuitBrokenIsCounted() async throws {
     let token = UUID().uuidString

@@ -240,6 +240,34 @@ struct StandardCircuitBreakerTests {
     await cb.recordSuccess()
     #expect(await cb.canProceed())
   }
+
+  @Test("a failed half-open trial re-opens the breaker when resetTimeout > window, driven by the clock")
+  func halfOpenTrialReopensUnderResetTimeoutGreaterThanWindow() async {
+    // NET-01 regression, made deterministic via the injected clock (NET-12). resetTimeout (30s)
+    // deliberately EXCEEDS the rolling window (10s) — the production-shaped ordering the original tests
+    // inverted (`resetTimeout < window`), which masked the bug. By the time the half-open trial runs, the
+    // two failures that first tripped the breaker have aged out of the window, so the windowed error-rate
+    // path (shouldTrip) can never fire on a lone trial failure. The re-trip therefore has to come from the
+    // half-open branch itself. Advancing a ManualClock exercises the whole sequence with zero real sleep.
+    let clock = ManualClock()
+    let cb = StandardCircuitBreaker(
+      name: "reopen-manual", errorRatePercentage: 50, minimumSampleThreshold: 2,
+      resetTimeout: .seconds(30), window: .seconds(10), bucketCount: 10, clock: clock)
+
+    await cb.recordFailure()
+    await cb.recordFailure()  // two samples at 100% -> trips open
+    #expect(await cb.cannotProceed())
+
+    // Advance past resetTimeout (31s), which is also well past the 10s window: the two tripping failures
+    // have aged out of the rolling window, and the breaker is now half-open (a trial is allowed).
+    clock.advance(by: .seconds(31))
+    #expect(await cb.canProceed())
+
+    // A single failed half-open trial. Its windowed sample count is 1 (< threshold 2), so shouldTrip's
+    // rate path cannot fire — only the half-open re-trip branch can re-open the breaker.
+    await cb.recordFailure()
+    #expect(await cb.cannotProceed())  // must re-open regardless of the aged-out windowed rate (NET-01)
+  }
 }
 
 @Suite("NoopCircuitBreaker")

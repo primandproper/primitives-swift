@@ -252,6 +252,67 @@ struct ExponentialBackoffPolicyTests {
     #expect(await recorder.durations == [.seconds(5)])
   }
 
+  // The original suite only counts attempts; these pin the actual delay *schedule* via the injected
+  // sleeper, so a regression in the geometric progression, the cap, or the jitter bounds is caught.
+  @Test("without jitter the inter-attempt delays follow the geometric progression")
+  func geometricProgressionWithoutJitter() async {
+    let recorder = SleepRecorder()
+    let policy = ExponentialBackoffPolicy(
+      config: RetryConfig(
+        maxAttempts: 5, initialDelay: .milliseconds(100), maxDelay: .seconds(100), multiplier: 2,
+        useJitter: false),
+      sleep: { await recorder.record($0) })
+
+    _ = try? await policy.execute { () async throws -> Int in throw TransientError() }
+
+    // 5 attempts -> 4 inter-attempt sleeps (none after the final attempt); each is the previous doubled,
+    // and the 100s cap is never reached.
+    #expect(
+      await recorder.durations == [
+        .milliseconds(100), .milliseconds(200), .milliseconds(400), .milliseconds(800),
+      ])
+  }
+
+  @Test("the per-attempt delay is clamped at maxDelay")
+  func delayClampedAtMaxDelay() async {
+    let recorder = SleepRecorder()
+    let policy = ExponentialBackoffPolicy(
+      config: RetryConfig(
+        maxAttempts: 5, initialDelay: .milliseconds(100), maxDelay: .milliseconds(500), multiplier: 10,
+        useJitter: false),
+      sleep: { await recorder.record($0) })
+
+    _ = try? await policy.execute { () async throws -> Int in throw TransientError() }
+
+    // 100ms, then 100*10 = 1000ms clamped down to the 500ms ceiling, and every later delay pinned there.
+    #expect(
+      await recorder.durations == [
+        .milliseconds(100), .milliseconds(500), .milliseconds(500), .milliseconds(500),
+      ])
+  }
+
+  @Test("with jitter every delay stays within the documented [delay/2, delay) bounds")
+  func jitterStaysWithinBounds() async {
+    let recorder = SleepRecorder()
+    // multiplier 1 holds the base delay constant at 100ms every attempt (it isn't clamped — the clamp is
+    // multiplier < 1), so each recorded sleep must land in [50ms, 100ms): the policy computes
+    // `delay - (delay/2 whole-ns) + random(0..<(delay/2 whole-ns))`.
+    let policy = ExponentialBackoffPolicy(
+      config: RetryConfig(
+        maxAttempts: 20, initialDelay: .milliseconds(100), maxDelay: .seconds(1), multiplier: 1,
+        useJitter: true),
+      sleep: { await recorder.record($0) })
+
+    _ = try? await policy.execute { () async throws -> Int in throw TransientError() }
+
+    let durations = await recorder.durations
+    #expect(durations.count == 19)  // 20 attempts -> 19 inter-attempt sleeps
+    for delay in durations {
+      #expect(delay >= .milliseconds(50))  // lower bound, hit when the random draw is 0
+      #expect(delay < .milliseconds(100))  // strict upper bound: jitter never reaches the full delay
+    }
+  }
+
   // NET-24: a floor smaller than the computed backoff is a no-op — the normal exponential schedule wins.
   @Test("a floor below the computed backoff leaves the backoff untouched")
   func retryAfterFloorBelowBackoffIgnored() async {

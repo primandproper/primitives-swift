@@ -159,6 +159,35 @@ struct WebSocketEventStreamTests {
     #expect(connection.cancelledWith == .goingAway)
   }
 
+  @Test(
+    "abandoning the consumer cancels the underlying receive() read, not just the consumer (NET-04)",
+    .timeLimit(.minutes(1)))
+  func abandoningConsumerCancelsUnderlyingReceive() async throws {
+    // Stronger NET-04 regression than `abandoningConsumerCancelsConnection` above: that one asserts the
+    // connection was `cancel()`-ed, but the Sources `MockWebSocketConnection.receive()` parks in a
+    // non-cancellable continuation, so it can't show whether the *network read task* was actually reaped.
+    // A cancellation-aware double records that its parked `receive()` observed cancellation — the
+    // observable proof the receive loop's task (not merely the consumer) was torn down.
+    let connection = CancellationRecordingWebSocketConnection()
+    let stream = WebSocketEventStream(connection: connection)
+    await stream.start(observer: recordingObserver("test"))
+
+    let consumer = Task {
+      for try await _ in stream.events {}
+    }
+    // Let the receive loop reach and park in receive() before abandoning the consumer.
+    try await Task.sleep(for: .milliseconds(20))
+    consumer.cancel()
+
+    // onTermination hops to the actor and runs close(), which cancels the receive task (reaping the parked
+    // receive()) and cancels the connection with .goingAway.
+    while !connection.receiveWasCancelled || connection.cancelledWith == nil {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(connection.receiveWasCancelled)
+    #expect(connection.cancelledWith == .goingAway)
+  }
+
   @Test("confirmHandshake succeeds when the initial ping is answered")
   func confirmHandshakeSucceeds() async throws {
     let connection = MockWebSocketConnection()  // defaults to answering pings with a pong
@@ -263,5 +292,60 @@ struct WebSocketEventStreamConnectorTests {
     let request = try #require(captured.withLock { $0 })
     #expect(request.url == URL(string: "wss://example.test/events")!)
     #expect(request.allHTTPHeaderFields?.isEmpty ?? true)
+  }
+}
+
+/// A ``WebSocketConnection`` double whose `receive()` is *cancellation-aware*: it parks awaiting an
+/// inbound frame and, when the surrounding task is cancelled, resumes by throwing `CancellationError`
+/// while recording that the network read was reaped.
+///
+/// The Sources `MockWebSocketConnection` is `final` (so it can't be subclassed) and its `receive()` parks
+/// in a plain `withCheckedContinuation` with no cancellation handler — it can never observe the teardown
+/// NET-04 guarantees. This test-local double adds exactly that observability without touching the Sources
+/// type. `sendPing()` succeeds so the handshake path (if used) doesn't fail; `send()`/`resume()` are inert.
+private final class CancellationRecordingWebSocketConnection: WebSocketConnection, @unchecked Sendable {
+  private struct State {
+    var receiveWaiter: CheckedContinuation<URLSessionWebSocketTask.Message, any Error>?
+    var receiveCancelled = false
+    var cancelledWith: URLSessionWebSocketTask.CloseCode?
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+
+  var receiveWasCancelled: Bool { state.withLock { $0.receiveCancelled } }
+  var cancelledWith: URLSessionWebSocketTask.CloseCode? { state.withLock { $0.cancelledWith } }
+
+  func resume() {}
+  func send(_ message: URLSessionWebSocketTask.Message) async throws {}
+  func sendPing() async throws {}
+
+  func receive() async throws -> URLSessionWebSocketTask.Message {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<URLSessionWebSocketTask.Message, any Error>) in
+        let alreadyCancelled: Bool = state.withLock { s in
+          if Task.isCancelled { return true }
+          s.receiveWaiter = continuation
+          return false
+        }
+        if alreadyCancelled {
+          state.withLock { $0.receiveCancelled = true }
+          continuation.resume(throwing: CancellationError())
+        }
+      }
+    } onCancel: {
+      let waiter = state.withLock {
+        s -> CheckedContinuation<URLSessionWebSocketTask.Message, any Error>? in
+        s.receiveCancelled = true
+        let pending = s.receiveWaiter
+        s.receiveWaiter = nil
+        return pending
+      }
+      waiter?.resume(throwing: CancellationError())
+    }
+  }
+
+  func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+    state.withLock { $0.cancelledWith = closeCode }
   }
 }
