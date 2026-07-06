@@ -58,6 +58,26 @@ build-ios:
 test:
 	$(SWIFT) test
 
+# Runs the test suite with coverage instrumentation and exports an lcov report
+# (coverage.lcov) that Codecov understands. Paths (the merged .profdata and the
+# instrumented test bundle) are resolved from `.build` so this works regardless
+# of the debug/release bin path.
+COVERAGE_FILE := coverage.lcov
+.PHONY: coverage
+coverage:
+	$(SWIFT) test --enable-code-coverage
+	@bin=$$($(SWIFT) build --show-bin-path); \
+	prof="$$bin/codecov/default.profdata"; \
+	xctest=$$(find "$$bin" -maxdepth 1 -name '*.xctest' | head -1); \
+	if [ -z "$$xctest" ]; then echo "no .xctest bundle in $$bin"; exit 1; fi; \
+	if [ -d "$$xctest/Contents/MacOS" ]; then \
+		binary="$$xctest/Contents/MacOS/$$(basename "$$xctest" .xctest)"; \
+	else \
+		binary="$$xctest"; \
+	fi; \
+	xcrun llvm-cov export -format=lcov -instr-profile "$$prof" "$$binary" > $(COVERAGE_FILE); \
+	echo "wrote $(COVERAGE_FILE)"
+
 .PHONY: test-ios
 test-ios:
 	@udid=$$(xcrun simctl list devices available | grep -m1 "$(IOS_SIM) (" | grep -oE '[0-9A-F-]{36}'); \

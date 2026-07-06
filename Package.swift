@@ -10,7 +10,6 @@ let package = Package(
   products: [
     .library(name: "Observability", targets: ["Observability"]),
     .library(name: "ObservabilityLog", targets: ["ObservabilityLog"]),
-    .library(name: "ObservabilityOTel", targets: ["ObservabilityOTel"]),
     .library(name: "Filtering", targets: ["Filtering"]),
     .library(name: "APIErrors", targets: ["APIErrors"]),
     .library(name: "Retry", targets: ["Retry"]),
