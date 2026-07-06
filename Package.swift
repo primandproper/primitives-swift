@@ -32,6 +32,15 @@ let package = Package(
     .library(name: "Notifications", targets: ["Notifications"]),
     .library(name: "Capitalism", targets: ["Capitalism"]),
     .library(name: "LLM", targets: ["LLM"]),
+    .library(name: "Secrets", targets: ["Secrets"]),
+    .library(name: "Cache", targets: ["Cache"]),
+    .library(name: "RateLimiting", targets: ["RateLimiting"]),
+    .library(name: "Files", targets: ["Files"]),
+    .library(name: "Fake", targets: ["Fake"]),
+    .library(name: "Embeddings", targets: ["Embeddings"]),
+    .library(name: "Uploads", targets: ["Uploads"]),
+    .library(name: "HealthCheck", targets: ["HealthCheck"]),
+    .library(name: "Panicking", targets: ["Panicking"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
@@ -272,6 +281,95 @@ let package = Package(
     .testTarget(
       name: "LLMTests",
       dependencies: ["LLM", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Secrets",
+      dependencies: ["Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "SecretsTests",
+      dependencies: ["Secrets", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Cache",
+      dependencies: ["Observability", "CircuitBreaking", "Encoding"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "CacheTests",
+      dependencies: ["Cache", "Observability", "CircuitBreaking", "Encoding"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "RateLimiting",
+      dependencies: ["Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "RateLimitingTests",
+      dependencies: ["RateLimiting", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Files",
+      dependencies: ["Encoding"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "FilesTests",
+      dependencies: ["Files", "Encoding"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Fake",
+      dependencies: ["RandomKit", "Identifiers"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "FakeTests",
+      dependencies: ["Fake", "RandomKit", "Identifiers"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Embeddings",
+      dependencies: ["HTTPClient", "Observability", "CircuitBreaking"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "EmbeddingsTests",
+      dependencies: ["Embeddings", "HTTPClient", "Observability", "CircuitBreaking"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Uploads",
+      dependencies: ["HTTPClient", "CircuitBreaking"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "UploadsTests",
+      dependencies: ["Uploads", "HTTPClient", "CircuitBreaking"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "HealthCheck",
+      dependencies: ["Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "HealthCheckTests",
+      dependencies: ["HealthCheck", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Panicking",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "PanickingTests",
+      dependencies: ["Panicking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
   ]
