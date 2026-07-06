@@ -17,6 +17,9 @@ import Observability
 //   struct OTelLogger: Logger { /* bridges to OTel logs */ }
 //   struct OTelTracer: Tracer { /* spans link via SpanContextStore.current; export over OTLP */ }
 //   struct OTelMetricsProvider: MetricsProvider { /* bootstraps an OTel MetricsFactory */ }
-//   enum W3CPropagation { /* inject/extract `traceparent` on URLRequest */ }
+//
+// Note: `W3CPropagation` (traceparent inject/extract) shipped early in core `Observability`
+// (OBS-20) — it is implementable purely from `SpanContext` with no OTel dependency, and lives
+// there so HTTPClient (NET-23) can consume it without depending on this heavy-dep target.
 
 enum ObservabilityOTelPlanned {}

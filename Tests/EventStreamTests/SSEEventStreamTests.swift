@@ -168,8 +168,8 @@ struct SSEEventStreamConnectorTests {
     #expect(event.type == "split")
   }
 
-  @Test("a transport failure propagates as a thrown error from connect()")
-  func transportFailurePropagatesFromConnect() async throws {
+  @Test("a transport failure propagates as a thrown error")
+  func transportFailurePropagates() async throws {
     let token = UUID().uuidString
     StreamingStubURLProtocol.register(
       token,
@@ -181,8 +181,13 @@ struct SSEEventStreamConnectorTests {
     let connector = SSEEventStreamConnector(
       session: streamingStubbedSession(), observer: recordingObserver("test"))
 
+    // With a proper `text/event-stream` Content-Type, URLSession delivers the body progressively, so a
+    // mid-body transport failure surfaces while iterating `events` rather than from `connect()`. Draining
+    // the stream catches it wherever it lands.
     await #expect(throws: (any Error).self) {
-      _ = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+      let stream = try await connector.connect(
+        to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+      for try await _ in stream.events {}
     }
   }
 
@@ -228,5 +233,60 @@ struct SSEEventStreamConnectorTests {
     await #expect(throws: EventStreamError.connectionFailed(status: 503)) {
       _ = try await connector.connect(to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
     }
+  }
+
+  @Test("a 200 with a non-event-stream Content-Type is rejected instead of parsed as silence")
+  func wrongContentTypeRejected() async throws {
+    let token = UUID().uuidString
+    StreamingStubURLProtocol.register(
+      token,
+      .init(
+        contentType: "text/html",
+        chunks: [(delay: .zero, data: Data("<html>error</html>".utf8))]))
+    defer { StreamingStubURLProtocol.unregister(token) }
+
+    let connector = SSEEventStreamConnector(
+      session: streamingStubbedSession(), observer: recordingObserver("test"))
+
+    await #expect(throws: EventStreamError.invalidContentType(received: "text/html")) {
+      _ = try await connector.connect(
+        to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+    }
+  }
+
+  @Test("a Content-Type with charset parameters is still accepted")
+  func contentTypeWithParametersAccepted() async throws {
+    let token = UUID().uuidString
+    StreamingStubURLProtocol.register(
+      token,
+      .init(
+        contentType: "text/event-stream; charset=utf-8",
+        chunks: [(delay: .zero, data: Data("event: ok\ndata: {}\n\n".utf8))]))
+    defer { StreamingStubURLProtocol.unregister(token) }
+
+    let connector = SSEEventStreamConnector(
+      session: streamingStubbedSession(), observer: recordingObserver("test"))
+    let stream = try await connector.connect(
+      to: streamingStubbedURL(), headers: stubRoutingHeaders(token: token))
+    defer { Task { await stream.close() } }
+
+    var iterator = stream.events.makeAsyncIterator()
+    let event = try #require(try await iterator.next())
+    #expect(event.type == "ok")
+  }
+}
+
+@Suite("StreamingSession factory")
+struct StreamingSessionTests {
+  @Test("disables the resource timeout and raises the inter-byte idle window")
+  func configurationValues() {
+    let configuration = StreamingSession.configuration()
+    // Resource timeout disabled: URLSessionConfiguration.default's finite ceiling would otherwise kill a
+    // long-lived stream regardless of activity.
+    #expect(configuration.timeoutIntervalForResource == .infinity)
+    // Request timeout is the inter-byte idle window for a streaming body; raised well past the 60s
+    // default so a quiet stream isn't torn down.
+    #expect(configuration.timeoutIntervalForRequest == StreamingSession.interByteIdleTimeout)
+    #expect(configuration.timeoutIntervalForRequest > 60)
   }
 }

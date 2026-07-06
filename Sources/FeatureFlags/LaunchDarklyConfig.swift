@@ -12,7 +12,16 @@
 /// nanosecond count too, converted via `Duration.wholeNanoseconds` on the way out and rebuilt with
 /// `.nanoseconds(_:)` on the way in (the same convention ``Retry``'s `RetryConfig` uses).
 public struct LaunchDarklyConfig: Codable, Sendable, Equatable {
-  /// The LaunchDarkly SDK key. Required for a real client; unused since this platform never builds one.
+  /// The LaunchDarkly **server-side SDK key**, carried verbatim from the Go config.
+  ///
+  /// **Do not wire this into a mobile client as-is.** LaunchDarkly draws a hard line between credential
+  /// types: a *server* SDK key (this field, `sdk-*`) authorizes the server-side SDK to stream the full
+  /// ruleset and evaluate flags locally, and must **never** ship inside a mobile app — anyone can extract
+  /// it and read every flag/segment. Mobile devices instead use a *mobile key* (`mob-*`), which only
+  /// authorizes fetching already-evaluated flag values for a single context from LaunchDarkly's client
+  /// endpoints. Because this port carries only the server key, ``FeatureFlagsConfig/makeFeatureFlagManager()``
+  /// deliberately throws for LaunchDarkly rather than misusing it; a real iOS LaunchDarkly backend must
+  /// first add a distinct mobile-key field and target the client-side (`/msdk`/`/meval`) endpoints.
   public var sdkKey: String
   /// The client initialization timeout. Zero mirrors Go's zero-valued `time.Duration`.
   public var initTimeout: Duration

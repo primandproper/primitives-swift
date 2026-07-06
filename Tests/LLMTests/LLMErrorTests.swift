@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import LLM
@@ -25,6 +26,19 @@ struct LLMErrorTests {
     #expect(
       LLMError.classify(status: 429, message: "", model: "m", retryAfterHeader: nil)
         == .rateLimit(retryAfter: nil))
+  }
+
+  // NET-24: the Retry-After parse previously handled only the numeric delta-seconds form. It now also
+  // honors the RFC 7231 HTTP-date form, computed as the remaining time from `now`.
+  @Test("Retry-After parses both delta-seconds and HTTP-date forms")
+  func retryAfterForms() {
+    #expect(LLMError.parseRetryAfter("30") == 30)
+    #expect(LLMError.parseRetryAfter(nil) == nil)
+    #expect(LLMError.parseRetryAfter("garbage") == nil)
+
+    let target = "Wed, 21 Oct 2015 07:29:00 GMT"
+    let now = Date(timeIntervalSince1970: 1_445_412_480)  // 2015-10-21 07:28:00 GMT
+    #expect(LLMError.parseRetryAfter(target, now: now) == 60)
   }
 
   @Test("400 routes a model-not-found message to modelNotFound, else invalidRequest")

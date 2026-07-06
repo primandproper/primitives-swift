@@ -19,6 +19,17 @@
 /// * ``NotificationsConfig`` / ``APNsConfig`` / ``FCMConfig`` / ``PushProvider`` — the provider-seam
 ///   config, ported from `mobile/config`.
 ///
+/// ## The client seam (no Go origin — iOS-native)
+///
+/// ``PushNotificationSender`` is server-shaped: it describes a backend pushing *to* a device and can't be
+/// implemented by an app. Its client counterpart is ``NotificationCenterManager``, which wraps the
+/// on-device `UNUserNotificationCenter` — request authorization, observe the APNs ``DeviceToken`` the app
+/// delegate receives, and ``NotificationCenterManager/schedule(_:)`` local notifications built from a
+/// ``LocalNotificationRequest`` (reusing ``PushMessage`` for content). It ships with
+/// ``SystemNotificationCenterManager`` (live, behind `#if canImport(UserNotifications)`),
+/// ``NoopNotificationCenterManager``, and ``MockNotificationCenterManager``. This has no platform-go
+/// analogue: sending is Go's job, receiving/scheduling is the OS's.
+///
 /// ## What is intentionally NOT ported (the salsa20 treatment)
 ///
 /// Actually *sending* a push via APNs (token auth, HTTP/2 to Apple) or FCM (the Firebase Admin SDK) is a

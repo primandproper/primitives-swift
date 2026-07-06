@@ -241,6 +241,111 @@ struct TracingSampleRatioTests {
   }
 }
 
+// MARK: - Diagnostics (OBS-21)
+
+/// Thread-safe recording logger for asserting on emitted summary lines.
+final class RecordingLogger: Logger, @unchecked Sendable {
+  private let lock = NSLock()
+  private var _messages: [String] = []
+
+  var messages: [String] {
+    lock.lock(); defer { lock.unlock() }
+    return _messages
+  }
+
+  func info(_ message: String) {
+    lock.lock(); _messages.append(message); lock.unlock()
+  }
+  func debug(_ message: String) {}
+  func error(_ whatWasHappening: String, _ error: Error) {}
+  func withName(_ name: String) -> any Logger { self }
+  func withValue(_ key: String, _ value: AttributeValue) -> any Logger { self }
+  func withValues(_ values: [String: AttributeValue]) -> any Logger { self }
+  func withError(_ error: Error) -> any Logger { self }
+  func withSpan(_ span: any Span) -> any Logger { self }
+}
+
+/// Stands in for `MXDiagnosticPayload`, which can't be constructed headless. Lets the decode/dispatch
+/// seam be exercised off-device.
+struct FakeDiagnosticPayload: DiagnosticPayloadConvertible {
+  let payload: DiagnosticPayload
+  func asDiagnosticPayload() -> DiagnosticPayload { payload }
+}
+
+@Suite("Diagnostics")
+struct DiagnosticsTests {
+
+  @Test("dispatcher decodes each source and forwards to the handler in order")
+  func dispatcherForwardsToHandler() {
+    let received = ReceivedBox()
+    let dispatcher = DiagnosticsDispatcher(
+      logger: NoopLogger(),
+      handler: { payload in received.append(payload) })
+
+    let first = DiagnosticPayload(crashes: [CrashDiagnostic(signal: 11)])
+    let second = DiagnosticPayload(hangs: [HangDiagnostic(durationSeconds: 2.5)])
+    dispatcher.dispatch([FakeDiagnosticPayload(payload: first), FakeDiagnosticPayload(payload: second)])
+
+    #expect(received.values == [first, second])
+  }
+
+  @Test("dispatcher logs a structured summary per payload")
+  func dispatcherLogsSummary() {
+    let logger = RecordingLogger()
+    let dispatcher = DiagnosticsDispatcher(logger: logger, handler: nil)
+
+    let payload = DiagnosticPayload(
+      crashes: [CrashDiagnostic(exceptionType: 1), CrashDiagnostic(exceptionType: 2)],
+      hangs: [HangDiagnostic(durationSeconds: 1)])
+    dispatcher.dispatch([payload])
+
+    #expect(logger.messages == ["MetricKit diagnostic payload: crashes=2 hangs=1"])
+  }
+
+  @Test("nil handler is tolerated — still logs, does not crash")
+  func nilHandlerTolerated() {
+    let logger = RecordingLogger()
+    let dispatcher = DiagnosticsDispatcher(logger: logger, handler: nil)
+    dispatcher.dispatch([DiagnosticPayload(crashes: [CrashDiagnostic()])])
+    #expect(logger.messages.count == 1)
+  }
+
+  @Test("decoded value type carries the meaningful crash/hang fields")
+  func valueTypeShape() {
+    let crash = CrashDiagnostic(
+      terminationReason: "Namespace SIGNAL",
+      exceptionType: 6,
+      exceptionCode: 0,
+      signal: 11,
+      virtualMemoryRegionInfo: "0x0 is not in any region")
+    #expect(crash.signal == 11)
+    #expect(crash.exceptionType == 6)
+    #expect(HangDiagnostic(durationSeconds: 3.2).durationSeconds == 3.2)
+
+    #expect(DiagnosticPayload().isEmpty)
+    #expect(!DiagnosticPayload(crashes: [crash]).isEmpty)
+  }
+
+  @Test("identity conformance: a DiagnosticPayload converts to itself")
+  func identityConformance() {
+    let payload = DiagnosticPayload(hangs: [HangDiagnostic(durationSeconds: 0.5)])
+    #expect(payload.asDiagnosticPayload() == payload)
+  }
+}
+
+/// Sendable sink for handler callbacks under Swift 6 concurrency.
+final class ReceivedBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _values: [DiagnosticPayload] = []
+  var values: [DiagnosticPayload] {
+    lock.lock(); defer { lock.unlock() }
+    return _values
+  }
+  func append(_ p: DiagnosticPayload) {
+    lock.lock(); _values.append(p); lock.unlock()
+  }
+}
+
 @Suite("Logger")
 struct LoggerTests {
 

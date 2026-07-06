@@ -103,13 +103,24 @@ struct MultiSourceEventReporterConstructionTests {
     try await multi.trackEvent(source: "ios", event: "e", userID: "u")
   }
 
-  @Test("the default makeReporter uses SourceConfig.provideCollector, which throws for segment/posthog")
-  func defaultMakeReporterFallsBackToNoop() async throws {
+  @Test("the default makeReporter uses SourceConfig.provideCollector, buffering without a network call")
+  func defaultMakeReporterBuffersWithoutNetwork() async throws {
     let multi = MultiSourceEventReporter(
       proxySources: [
         "ios": SourceConfig(segment: SegmentConfig(apiToken: "tok"), provider: "segment")
       ])
-    // provideCollector() throws unsupportedProvider for segment, so this source is noop-backed.
+    // provideCollector() now returns a real SegmentEventReporter; trackEvent only buffers in memory
+    // (no flush without close/batch-size), so this never touches the network.
+    try await multi.trackEvent(source: "ios", event: "e", userID: "u")
+  }
+
+  @Test("a source with an empty credential key falls back to noop")
+  func emptyCredentialFallsBackToNoop() async throws {
+    // provideCollector() throws emptyWriteKey; the source silently degrades to noop, matching Go.
+    let multi = MultiSourceEventReporter(
+      proxySources: [
+        "ios": SourceConfig(segment: SegmentConfig(apiToken: ""), provider: "segment")
+      ])
     try await multi.trackEvent(source: "ios", event: "e", userID: "u")
   }
 

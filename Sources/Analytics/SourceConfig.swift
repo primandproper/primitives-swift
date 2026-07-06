@@ -1,5 +1,6 @@
 import CircuitBreaking
 import Foundation
+import Observability
 
 /// The per-source analytics config (provider + credentials), ported from platform-go's
 /// `analyticscfg.SourceConfig` (`analytics/config/config.go`). Used standalone for a single-provider
@@ -7,9 +8,9 @@ import Foundation
 ///
 /// Reuses ``CircuitBreaking``'s ``CircuitBreakerConfig`` rather than redefining the
 /// `circuitBreakerErrorPercentage`/`circuitBreakerMinimumOccurrenceThreshold` JSON keys a second time —
-/// the Go origin embeds `circuitbreakingcfg.Config` for the same reason. The breaker itself is never
-/// actually constructed by ``provideCollector()`` today (both recognized providers throw before needing
-/// it), but the field is preserved for wire fidelity and for whenever a real backend is wired up.
+/// the Go origin embeds `circuitbreakingcfg.Config` for the same reason. ``provideCollector(session:observer:metrics:)``
+/// builds a live ``CircuitBreaker`` from this field and threads it into the real
+/// ``SegmentEventReporter``/``PostHogEventReporter``, exactly as Go's `ProvideCollector` does.
 public struct SourceConfig: Codable, Sendable, Equatable {
   public var segment: SegmentConfig?
   public var posthog: PostHogConfig?
@@ -105,27 +106,53 @@ public struct SourceConfig: Codable, Sendable, Equatable {
 
   /// Builds the configured ``EventReporter``, ported from Go's `SourceConfig.ProvideCollector`.
   ///
-  /// An empty or unrecognized provider returns ``NoopEventReporter`` (Go's `default` case, which logs
-  /// and falls back rather than failing). A recognized provider with no matching credentials block
-  /// throws ``SourceConfigError/missingProviderConfig(_:)`` (Go: "segment provider configured but
-  /// segment config is nil"). A recognized, fully-configured provider throws
-  /// ``AnalyticsError/unsupportedProvider(_:)`` — see ``AnalyticsError`` for why.
-  public func provideCollector() throws -> any EventReporter {
+  /// The embedded ``circuitBreaker`` config is first turned into a live ``CircuitBreaker`` (via
+  /// ``CircuitBreakerConfig/provideCircuitBreaker(logger:metrics:tags:resetTimeout:)``) and threaded into
+  /// the real reporter, exactly as Go builds `cb` up front and passes it into every backend.
+  ///
+  /// - An empty or unrecognized provider returns ``NoopEventReporter`` (Go's `default` case, which logs
+  ///   and falls back rather than failing).
+  /// - A recognized provider with no matching credentials block throws
+  ///   ``SourceConfigError/missingProviderConfig(_:)`` (Go: "segment provider configured but segment
+  ///   config is nil").
+  /// - A recognized, fully-configured provider returns a live
+  ///   ``SegmentEventReporter``/``PostHogEventReporter``. An empty credential key throws
+  ///   ``SegmentEventReporterError/emptyWriteKey``/``PostHogEventReporterError/emptyAPIKey`` (Go's
+  ///   `ErrEmptyAPIToken`).
+  ///
+  /// - Parameters:
+  ///   - session: The `URLSession` the reporter uploads batches through. Injectable so tests can stub
+  ///     the transport; defaults to `.shared`.
+  ///   - observer: Observability for the reporter (logs flush failures). Defaults to a silent observer.
+  ///   - metrics: Metrics provider for the circuit breaker. Defaults to a no-op.
+  public func provideCollector(
+    session: URLSession = .shared,
+    observer: any Observer = defaultAnalyticsObserver(name: "analytics_event_reporter"),
+    metrics: any MetricsProvider = NoopMetricsProvider()
+  ) throws -> any EventReporter {
     guard let resolved = resolvedProvider else {
+      observer.logger
+        .withValue("provider", provider)
+        .info("no analytics provider configured or unrecognized provider, using noop")
       return NoopEventReporter()
     }
 
+    let breaker = circuitBreaker.provideCircuitBreaker(logger: observer.logger, metrics: metrics)
+
     switch resolved {
     case .segment:
-      guard segment != nil else {
+      guard let segment else {
         throw SourceConfigError.missingProviderConfig(.segment)
       }
-      throw AnalyticsError.unsupportedProvider(.segment)
+      return try SegmentEventReporter(
+        writeKey: segment.apiToken, circuitBreaker: breaker, session: session, observer: observer)
     case .posthog:
-      guard posthog != nil else {
+      guard let posthog else {
         throw SourceConfigError.missingProviderConfig(.posthog)
       }
-      throw AnalyticsError.unsupportedProvider(.posthog)
+      return try PostHogEventReporter(
+        apiKey: posthog.apiKey, endpoint: posthog.endpoint, circuitBreaker: breaker,
+        session: session, observer: observer)
     }
   }
 }

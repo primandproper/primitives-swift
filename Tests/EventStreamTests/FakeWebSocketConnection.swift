@@ -12,12 +12,26 @@ import os
 /// ``resume()``/``cancel(with:reason:)`` must stay synchronous to satisfy ``WebSocketConnection``, and a
 /// lock avoids the "did the fire-and-forget Task run yet" race an actor would introduce for those calls.
 final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
+  /// How the fake answers a ``sendPing()``, letting a test drive the heartbeat's success/timeout paths.
+  enum PingResponse: Sendable {
+    /// A pong comes back immediately (a live connection).
+    case pong
+    /// The ping itself fails (e.g. a failed handshake surfaced through the initial confirming ping).
+    case failure(any Error & Sendable)
+    /// No pong ever arrives — the call parks until the task is cancelled (a NAT-dropped connection). This
+    /// is what the heartbeat's pong-timeout window is meant to catch.
+    case hang
+  }
+
   private struct State {
     var inbox: [Result<URLSessionWebSocketTask.Message, any Error>] = []
     var waiters: [CheckedContinuation<Void, Never>] = []
     var sentMessages: [URLSessionWebSocketTask.Message] = []
     var resumeCallCount = 0
     var cancelledWith: URLSessionWebSocketTask.CloseCode?
+    var pingResponse: PingResponse = .pong
+    var pingCallCount = 0
+    var pingWaiters: [CheckedContinuation<Void, any Error>] = []
   }
 
   private let state = OSAllocatedUnfairLock(initialState: State())
@@ -25,6 +39,12 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
   var resumeCallCount: Int { state.withLock { $0.resumeCallCount } }
   var sentMessages: [URLSessionWebSocketTask.Message] { state.withLock { $0.sentMessages } }
   var cancelledWith: URLSessionWebSocketTask.CloseCode? { state.withLock { $0.cancelledWith } }
+  var pingCallCount: Int { state.withLock { $0.pingCallCount } }
+
+  /// Sets how the next ``sendPing()`` calls respond.
+  func setPingResponse(_ response: PingResponse) {
+    state.withLock { $0.pingResponse = response }
+  }
 
   /// Queues a message (or failure) for the next ``receive()`` call to return, in FIFO order, waking any
   /// call already parked in ``receive()`` waiting for one. Continuations are resumed *after* releasing
@@ -57,6 +77,39 @@ final class FakeWebSocketConnection: WebSocketConnection, @unchecked Sendable {
       }
       await withCheckedContinuation { continuation in
         state.withLock { $0.waiters.append(continuation) }
+      }
+    }
+  }
+
+  func sendPing() async throws {
+    let response: PingResponse = state.withLock { s in
+      s.pingCallCount += 1
+      return s.pingResponse
+    }
+    switch response {
+    case .pong:
+      return
+    case .failure(let error):
+      throw error
+    case .hang:
+      // Park until cancelled, then surface a `CancellationError` — the shape a real hung ping takes when
+      // the heartbeat's timeout task wins the race and cancels this one.
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+          let resumeCancelled: Bool = state.withLock { s in
+            if Task.isCancelled { return true }
+            s.pingWaiters.append(continuation)
+            return false
+          }
+          if resumeCancelled { continuation.resume(throwing: CancellationError()) }
+        }
+      } onCancel: {
+        let waiters = state.withLock { s -> [CheckedContinuation<Void, any Error>] in
+          let pending = s.pingWaiters
+          s.pingWaiters.removeAll()
+          return pending
+        }
+        for waiter in waiters { waiter.resume(throwing: CancellationError()) }
       }
     }
   }

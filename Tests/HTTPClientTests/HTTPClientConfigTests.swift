@@ -84,4 +84,33 @@ struct HTTPClientConfigTests {
     #expect(sessionConfig.timeoutIntervalForRequest == 4)
     #expect(sessionConfig.httpMaximumConnectionsPerHost == 7)
   }
+
+  @Test("waitsForConnectivity defaults to false, matching Go's fail-fast http.Client")
+  func waitsForConnectivityDefaultsFalse() {
+    #expect(HTTPClientConfig().waitsForConnectivity == false)
+    // The default must also reach the session so an un-configured client fails fast when offline.
+    #expect(HTTPClientConfig().buildSessionConfiguration().waitsForConnectivity == false)
+  }
+
+  @Test("waitsForConnectivity round-trips through Codable and reaches the session configuration")
+  func waitsForConnectivityRoundTrips() throws {
+    let cfg = HTTPClientConfig(
+      timeout: .seconds(2), maxIdleConns: 42, maxIdleConnsPerHost: 21, enableTracing: true,
+      waitsForConnectivity: true)
+
+    let data = try JSONEncoder().encode(cfg)
+    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect((json["waitsForConnectivity"] as? NSNumber)?.boolValue == true)
+
+    let decoded = try JSONDecoder().decode(HTTPClientConfig.self, from: data)
+    #expect(decoded == cfg)
+    #expect(decoded.buildSessionConfiguration().waitsForConnectivity == true)
+  }
+
+  @Test("a JSON object missing waitsForConnectivity decodes it to false")
+  func waitsForConnectivityLenientDecode() throws {
+    let data = Data(#"{"timeout": 3000000000}"#.utf8)
+    let decoded = try JSONDecoder().decode(HTTPClientConfig.self, from: data)
+    #expect(decoded.waitsForConnectivity == false)
+  }
 }

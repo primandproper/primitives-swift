@@ -158,6 +158,74 @@ struct WebSocketEventStreamTests {
     }
     #expect(connection.cancelledWith == .goingAway)
   }
+
+  @Test("confirmHandshake succeeds when the initial ping is answered")
+  func confirmHandshakeSucceeds() async throws {
+    let connection = FakeWebSocketConnection()  // defaults to answering pings with a pong
+    let stream = WebSocketEventStream(connection: connection)
+    await stream.start(observer: recordingObserver("test"))
+    defer { Task { await stream.close() } }
+
+    try await stream.confirmHandshake()
+    #expect(connection.pingCallCount == 1)
+  }
+
+  @Test("confirmHandshake propagates a failed upgrade instead of deferring it to receive()")
+  func confirmHandshakeFailurePropagates() async throws {
+    let connection = FakeWebSocketConnection()
+    connection.setPingResponse(.failure(URLError(.badServerResponse)))
+    let stream = WebSocketEventStream(connection: connection)
+    await stream.start(observer: recordingObserver("test"))
+    defer { Task { await stream.close() } }
+
+    await #expect(throws: (any Error).self) {
+      try await stream.confirmHandshake()
+    }
+  }
+
+  @Test("the heartbeat sends pings on the configured interval", .timeLimit(.minutes(1)))
+  func heartbeatSendsPings() async throws {
+    let connection = FakeWebSocketConnection()  // pings answered with a pong
+    let config = WebSocketEventStreamConfig(heartbeatInterval: .milliseconds(20))
+    let stream = WebSocketEventStream(connection: connection, config: config)
+    await stream.start(observer: recordingObserver("test"))
+    defer { Task { await stream.close() } }
+
+    // Poll until at least two heartbeats have fired, proving the loop is periodic rather than one-shot.
+    for _ in 0..<100 {
+      if connection.pingCallCount >= 2 { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(connection.pingCallCount >= 2)
+  }
+
+  @Test("a pong timeout tears the connection down", .timeLimit(.minutes(1)))
+  func pongTimeoutClosesConnection() async throws {
+    let connection = FakeWebSocketConnection()
+    connection.setPingResponse(.hang)  // ping is sent but no pong ever comes back
+    let config = WebSocketEventStreamConfig(heartbeatInterval: .milliseconds(20))
+    let stream = WebSocketEventStream(connection: connection, config: config)
+    await stream.start(observer: recordingObserver("test"))
+
+    // A NAT-dropped connection never errors a parked receive() on its own; the heartbeat's pong timeout
+    // is what surfaces it, finishing events by throwing and cancelling the connection.
+    var iterator = stream.events.makeAsyncIterator()
+    await #expect(throws: (any Error).self) {
+      _ = try await iterator.next()
+    }
+    #expect(connection.cancelledWith == .goingAway)
+  }
+
+  @Test("a zero heartbeat interval runs no heartbeat loop")
+  func zeroHeartbeatIntervalDisablesLoop() async throws {
+    let connection = FakeWebSocketConnection()
+    let stream = WebSocketEventStream(connection: connection)  // default config: interval .zero
+    await stream.start(observer: recordingObserver("test"))
+    defer { Task { await stream.close() } }
+
+    try await Task.sleep(for: .milliseconds(40))
+    #expect(connection.pingCallCount == 0)
+  }
 }
 
 @Suite("WebSocketEventStreamConnector")

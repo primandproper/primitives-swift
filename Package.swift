@@ -218,7 +218,7 @@ let package = Package(
     ),
     .target(
       name: "Analytics",
-      dependencies: ["CircuitBreaking"],
+      dependencies: ["CircuitBreaking", "Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
@@ -228,21 +228,22 @@ let package = Package(
     ),
     .target(
       name: "FeatureFlags",
+      dependencies: ["CircuitBreaking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "FeatureFlagsTests",
-      dependencies: ["FeatureFlags"],
+      dependencies: ["FeatureFlags", "CircuitBreaking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
       name: "EventStream",
-      dependencies: ["Observability"],
+      dependencies: ["Observability", "Retry"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "EventStreamTests",
-      dependencies: ["EventStream", "Observability"],
+      dependencies: ["EventStream", "Observability", "Retry"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(

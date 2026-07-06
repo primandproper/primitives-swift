@@ -12,16 +12,15 @@
 ///   * ``AnalyticsConfig``/``SourceConfig``/``ProxySourcesConfig`` — the wire-compatible `Codable`
 ///     config tree, including validation.
 ///   * ``MultiSourceEventReporter`` — the per-source routing/fan-out reporter (`multisource/reporter.go`).
-///     Its composition logic is real and useful even without a live vendor backend: it delegates to
-///     whatever ``EventReporter`` is registered per source and falls back to ``NoopEventReporter`` for
-///     an unknown or unconfigured source, exactly like the Go original.
-///
-/// What gets the **salsa20 treatment** (decodes, factory throws):
-///   * ``SegmentConfig`` and ``PostHogConfig`` decode/encode Go's exact wire shape, but
-///     ``SourceConfig/provideCollector()`` throws ``AnalyticsError/unsupportedProvider(_:)`` for both —
-///     neither Segment nor PostHog ships a first-party Swift/iOS SDK, and vendoring their server-side Go
-///     SDKs (or a heavy third-party client) is out of scope for this port. Wire up a real backend only
-///     if a flow needs one.
+///     It delegates to whatever ``EventReporter`` is registered per source and falls back to
+///     ``NoopEventReporter`` for an unknown or unconfigured source (logging the fallback), exactly like
+///     the Go original.
+///   * ``SegmentEventReporter`` and ``PostHogEventReporter`` — thin URLSession + Codable reporters that
+///     reimplement the Go SDKs' batch upload (`POST /v1/batch` / `POST {endpoint}/batch`) directly. Both
+///     Segment and PostHog *do* ship first-party Swift SDKs; the port reimplements the HTTP call itself
+///     purely because of this port's no-vendor-SDK policy. Events buffer in memory and flush on
+///     batch-size/`close()`; the ``SegmentConfig``/``PostHogConfig`` circuit breaker is threaded through
+///     ``SourceConfig/provideCollector(session:observer:metrics:)`` into each reporter.
 ///
 /// Dropped (server-side, no iOS analogue): the `samber/do` DI registration (`config/do.go`,
 /// `multisource/do.go`) — replaced everywhere in this port by plain constructor injection.

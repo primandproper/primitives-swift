@@ -84,13 +84,47 @@ struct SSEFrameParserTests {
     #expect(events[0].type == "ping")
   }
 
-  @Test("id and retry fields are consumed but not modeled by Event")
-  func idAndRetryFieldsIgnored() {
-    let events = parse(["id: 42", "retry: 3000", "event: tick", "data: {}", ""])
+  @Test("id and retry fields are retained as reconnection state, not surfaced on Event")
+  func idAndRetryFieldsTrackedNotModeled() {
+    var parser = SSEFrameParser()
+    var events: [Event] = []
+    for line in ["id: 42", "retry: 3000", "event: tick", "data: {}", ""] {
+      if let event = parser.consume(line) { events.append(event) }
+    }
 
+    // The dispatched Event still models only type/payload, exactly as before.
     #expect(events.count == 1)
     #expect(events[0].type == "tick")
     #expect(events[0].payload == Data("{}".utf8))
+    // But the parser now exposes the reconnection fields a reconnecting wrapper needs.
+    #expect(parser.lastEventID == "42")
+    #expect(parser.reconnectionTime == .milliseconds(3000))
+  }
+
+  @Test("the last event ID persists across frames until a new id arrives")
+  func lastEventIDPersistsAcrossFrames() {
+    var parser = SSEFrameParser()
+    for line in ["id: first", "data: {}", ""] { _ = parser.consume(line) }
+    #expect(parser.lastEventID == "first")
+
+    // A frame with no id: leaves the buffer untouched (WHATWG: it is not reset between events).
+    for line in ["data: {}", ""] { _ = parser.consume(line) }
+    #expect(parser.lastEventID == "first")
+
+    // A new id: overwrites it.
+    for line in ["id: second", "data: {}", ""] { _ = parser.consume(line) }
+    #expect(parser.lastEventID == "second")
+  }
+
+  @Test("a non-digit retry value is ignored, not honored")
+  func nonDigitRetryIgnored() {
+    var parser = SSEFrameParser()
+    for line in ["retry: 1500", "data: {}", ""] { _ = parser.consume(line) }
+    #expect(parser.reconnectionTime == .milliseconds(1500))
+
+    // Per WHATWG, a non-ASCII-digit retry value is ignored — it must not clear the prior value.
+    for line in ["retry: soon", "data: {}", ""] { _ = parser.consume(line) }
+    #expect(parser.reconnectionTime == .milliseconds(1500))
   }
 
   @Test("a blank line with no accumulated fields dispatches nothing")
@@ -101,13 +135,25 @@ struct SSEFrameParserTests {
     #expect(events[0].type == "real")
   }
 
-  @Test("an event with only a type field and no data has a nil payload")
-  func typeOnlyEventHasNilPayload() {
-    let events = parse(["event: heartbeat", ""])
+  @Test("a frame with no data line dispatches nothing, per the WHATWG dispatch step")
+  func emptyDataFrameDispatchesNothing() {
+    // A lone `event:` with no `data:` has an empty data buffer, so the spec dispatches nothing — its
+    // id/retry side effects still apply, but no Event is produced.
+    var parser = SSEFrameParser()
+    var events: [Event] = []
+    for line in ["event: heartbeat", "id: h1", ""] {
+      if let event = parser.consume(line) { events.append(event) }
+    }
 
+    #expect(events.isEmpty)
+    #expect(parser.lastEventID == "h1")
+
+    // A following real frame still dispatches normally (buffers were reset, id persisted).
+    for line in ["data: {}", ""] {
+      if let event = parser.consume(line) { events.append(event) }
+    }
     #expect(events.count == 1)
-    #expect(events[0].type == "heartbeat")
-    #expect(events[0].payload == nil)
+    #expect(events[0].type == "")
   }
 
   @Test("the exact bytes Go's sse.sseStream.Send writes for one event")

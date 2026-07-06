@@ -1,3 +1,4 @@
+import CircuitBreaking
 import Foundation
 import Testing
 
@@ -53,14 +54,6 @@ struct PostHogConfigTests {
     #expect(config.endpoint == "https://eu.posthog.com")
   }
 
-  @Test("missing fields decode to Go's zero values")
-  func decodesMissingFields() throws {
-    let config = try JSONDecoder().decode(PostHogConfig.self, from: Data("{}".utf8))
-    #expect(config.projectAPIKey == "")
-    #expect(config.personalAPIKey == "")
-    #expect(config.endpoint == "")
-  }
-
   @Test("a partial payload decodes, defaulting the absent fields")
   func decodesPartialFields() throws {
     let config = try JSONDecoder().decode(
@@ -76,6 +69,34 @@ struct PostHogConfigTests {
     let decoded = try JSONDecoder().decode(
       PostHogConfig.self, from: try JSONEncoder().encode(original))
     #expect(decoded == original)
+  }
+
+  @Test("carries the Go circuitBreakerConfig field")
+  func decodesCircuitBreakerConfig() throws {
+    let json = Data(
+      #"""
+      {
+        "projectAPIKey": "proj",
+        "circuitBreakerConfig": {
+          "name": "ff",
+          "circuitBreakerErrorPercentage": 50,
+          "circuitBreakerMinimumOccurrenceThreshold": 10
+        }
+      }
+      """#.utf8)
+    let config = try JSONDecoder().decode(PostHogConfig.self, from: json)
+    #expect(config.circuitBreaker.name == "ff")
+    #expect(config.circuitBreaker.errorRate == 50)
+    #expect(config.circuitBreaker.minimumSampleThreshold == 10)
+  }
+
+  @Test("missing keys (including circuitBreakerConfig) decode to zero values")
+  func decodesMissingFields() throws {
+    let config = try JSONDecoder().decode(PostHogConfig.self, from: Data("{}".utf8))
+    #expect(config.projectAPIKey == "")
+    #expect(config.personalAPIKey == "")
+    #expect(config.endpoint == "")
+    #expect(config.circuitBreaker == CircuitBreakerConfig())
   }
 }
 
@@ -155,16 +176,28 @@ struct FeatureFlagsConfigFactoryTests {
     }
   }
 
-  @Test(
-    "recognized vendor providers are unsupported on this platform",
-    arguments: [
-      ("launchdarkly", FeatureFlagsError.unsupportedProvider(.launchDarkly)),
-      ("posthog", FeatureFlagsError.unsupportedProvider(.postHog)),
-    ]
-  )
-  func recognizedProvidersThrow(provider: String, expected: FeatureFlagsError) {
-    let config = FeatureFlagsConfig(provider: provider)
-    #expect(throws: expected) {
+  @Test("launchdarkly stays unsupported on this platform (server key, not a mobile key)")
+  func launchDarklyThrows() {
+    let config = FeatureFlagsConfig(
+      launchDarkly: LaunchDarklyConfig(sdkKey: "sdk-key"), provider: "launchdarkly")
+    #expect(throws: FeatureFlagsError.unsupportedProvider(.launchDarkly)) {
+      _ = try config.makeFeatureFlagManager()
+    }
+  }
+
+  @Test("a posthog provider with its sub-config builds a live PostHog manager")
+  func postHogBuildsLiveManager() throws {
+    let config = FeatureFlagsConfig(
+      postHog: PostHogConfig(projectAPIKey: "proj", personalAPIKey: "personal"),
+      provider: "posthog")
+    let manager = try config.makeFeatureFlagManager()
+    #expect(manager is PostHogFeatureFlagManager)
+  }
+
+  @Test("a posthog provider missing its sub-config throws")
+  func postHogMissingConfigThrows() {
+    let config = FeatureFlagsConfig(provider: "posthog")
+    #expect(throws: FeatureFlagsError.missingProviderConfig(.postHog)) {
       _ = try config.makeFeatureFlagManager()
     }
   }

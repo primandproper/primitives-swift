@@ -368,4 +368,230 @@ struct HTTPClientCancellationTests {
     #expect(breaker.failures == 0)
     #expect(breaker.successes == 0)
   }
+
+  // NET-24: a cancellation landing during the retry backoff must surface the last attempt's error, not a
+  // bare CancellationError — the HTTPClient-level counterpart of the Retry unit test. The first attempt
+  // fails with a distinctive transport error; a long backoff guarantees the cancel lands during it.
+  @Test("cancelling mid-retry surfaces the last attempt's error, not a bare CancellationError")
+  func cancellationSurfacesLastError() async throws {
+    let token = UUID().uuidString
+    StubURLProtocol.register(token) { _ in .fail(URLError(.timedOut)) }
+    defer { StubURLProtocol.unregister(token) }
+
+    let policy = ExponentialBackoffPolicy(
+      config: RetryConfig(maxAttempts: 5, initialDelay: .seconds(3600), useJitter: false))
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: policy)
+
+    let task = Task { try await client.perform(stubbedRequest(token: token)) }
+    // Let the first attempt fail and the loop enter its (very long) backoff, then cancel.
+    try await Task.sleep(for: .milliseconds(150))
+    task.cancel()
+
+    var thrown: (any Error)?
+    do { _ = try await task.value } catch { thrown = error }
+    let error = try #require(thrown)
+    // The surfaced error is the wrapped transport failure, not a bare CancellationError.
+    #expect(!(error is CancellationError))
+  }
+}
+
+@Suite("HTTPClient retryable-status retries")
+struct HTTPClientRetryableStatusTests {
+  @Test("a retryable 503 is retried until it succeeds")
+  func retriesRetryableStatusUntilSuccess() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      let n = attempts.increment()
+      if n < 3 { return .respond(status: 503, body: Data("busy".utf8), headers: [:]) }
+      return .respond(status: 200, body: Data("ok".utf8), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    let response = try await client.perform(stubbedRequest(token: token))
+
+    #expect(response.statusCode == 200)
+    #expect(attempts.value == 3)
+  }
+
+  @Test("a retryable 429 is retried and, once attempts are exhausted, the response is returned")
+  func exhaustsRetryableStatusReturnsResponse() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      attempts.increment()
+      return .respond(status: 429, body: Data("slow down".utf8), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    // Exhausting the retries hands back the 429 verbatim rather than throwing (Go's Client.Do contract).
+    let response = try await client.perform(stubbedRequest(token: token))
+
+    #expect(response.statusCode == 429)
+    #expect(response.body == Data("slow down".utf8))
+    #expect(attempts.value == 3)
+  }
+
+  @Test("a non-retryable status (e.g. 500) is returned on the first attempt, unretried")
+  func nonRetryableStatusNotRetried() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      attempts.increment()
+      return .respond(status: 500, body: Data(), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    let response = try await client.perform(stubbedRequest(token: token))
+
+    #expect(response.statusCode == 500)
+    #expect(attempts.value == 1)
+  }
+
+  @Test("a custom classifier can widen the retryable set")
+  func customClassifierWidensRetryableSet() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      let n = attempts.increment()
+      if n < 2 { return .respond(status: 502, body: Data(), headers: [:]) }
+      return .respond(status: 200, body: Data(), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3),
+      retryableStatus: { $0 == 502 })
+
+    let response = try await client.perform(stubbedRequest(token: token))
+
+    #expect(response.statusCode == 200)
+    #expect(attempts.value == 2)
+  }
+}
+
+@Suite("HTTPClient idempotency gating")
+struct HTTPClientIdempotencyTests {
+  private func request(method: String, token: String) -> URLRequest {
+    var request = stubbedRequest(token: token)
+    request.httpMethod = method
+    return request
+  }
+
+  @Test("a non-idempotent POST is not retried by default")
+  func nonIdempotentNotRetriedByDefault() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      attempts.increment()
+      return .respond(status: 503, body: Data(), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    let response = try await client.perform(request(method: "POST", token: token))
+
+    // Not retried: a single attempt, and the 503 comes back as a plain response.
+    #expect(response.statusCode == 503)
+    #expect(attempts.value == 1)
+  }
+
+  @Test("a non-idempotent POST is retried when the caller opts in")
+  func nonIdempotentRetriedWhenOptedIn() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      let n = attempts.increment()
+      if n < 3 { return .respond(status: 503, body: Data(), headers: [:]) }
+      return .respond(status: 200, body: Data(), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    let response = try await client.perform(
+      request(method: "POST", token: token), retryNonIdempotent: true)
+
+    #expect(response.statusCode == 200)
+    #expect(attempts.value == 3)
+  }
+
+  @Test("an idempotent PUT is retried by default")
+  func idempotentPutRetriedByDefault() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      let n = attempts.increment()
+      if n < 2 { return .respond(status: 503, body: Data(), headers: [:]) }
+      return .respond(status: 200, body: Data(), headers: [:])
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3))
+
+    let response = try await client.perform(request(method: "PUT", token: token))
+
+    #expect(response.statusCode == 200)
+    #expect(attempts.value == 2)
+  }
+}
+
+@Suite("HTTPClient Retry-After floor parsing")
+struct HTTPClientRetryAfterTests {
+  private func response(retryAfter: String?) -> HTTPURLResponse {
+    var headers: [String: String] = [:]
+    if let retryAfter { headers["Retry-After"] = retryAfter }
+    return HTTPURLResponse(
+      url: URL(string: "https://example.test")!, statusCode: 503, httpVersion: "HTTP/1.1",
+      headerFields: headers)!
+  }
+
+  @Test("numeric delta-seconds parse to that many seconds")
+  func numericFloor() {
+    #expect(HTTPClient.retryAfterFloor(from: response(retryAfter: "120")) == .seconds(120))
+  }
+
+  @Test("an HTTP-date parses to the remaining time from now")
+  func httpDateFloor() {
+    // A fixed IMF-fixdate and a `now` 60s before it → a 60s floor.
+    let target = "Wed, 21 Oct 2015 07:29:00 GMT"
+    let now = Date(timeIntervalSince1970: 1_445_412_480)  // 2015-10-21 07:28:00 GMT
+    let floor = HTTPClient.retryAfterFloor(from: response(retryAfter: target), now: now)
+    #expect(floor == .seconds(60))
+  }
+
+  @Test("a past HTTP-date floors at zero (retry immediately)")
+  func pastDateFloorsAtZero() {
+    let past = "Wed, 21 Oct 2015 07:28:00 GMT"
+    let now = Date(timeIntervalSince1970: 1_445_412_600)  // 2 minutes later
+    #expect(HTTPClient.retryAfterFloor(from: response(retryAfter: past), now: now) == .zero)
+  }
+
+  @Test("an absent or unparseable header imposes no floor")
+  func absentOrGarbageIsNil() {
+    #expect(HTTPClient.retryAfterFloor(from: response(retryAfter: nil)) == nil)
+    #expect(HTTPClient.retryAfterFloor(from: response(retryAfter: "not-a-date")) == nil)
+  }
 }

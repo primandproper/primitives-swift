@@ -36,13 +36,27 @@ public enum SpanContextStore {
 
 enum IDGen {
   /// 128-bit trace id, 32 hex chars (W3C `trace-id`).
+  ///
+  /// Loops on the astronomically rare all-zero draw, which W3C declares an invalid trace-id.
   static func traceID() -> String {
-    String(
-      format: "%016llx%016llx", UInt64.random(in: .min ... .max), UInt64.random(in: .min ... .max))
+    while true {
+      let hi = UInt64.random(in: .min ... .max)
+      let lo = UInt64.random(in: .min ... .max)
+      if hi != 0 || lo != 0 {
+        return String(format: "%016llx%016llx", hi, lo)
+      }
+    }
   }
 
   /// 64-bit span id, 16 hex chars (W3C `parent-id`).
+  ///
+  /// Loops on the astronomically rare all-zero draw, which W3C declares an invalid parent-id.
   static func spanID() -> String {
-    String(format: "%016llx", UInt64.random(in: .min ... .max))
+    while true {
+      let value = UInt64.random(in: .min ... .max)
+      if value != 0 {
+        return String(format: "%016llx", value)
+      }
+    }
   }
 }

@@ -23,14 +23,18 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
 
   struct Behavior: Sendable {
     var status: Int
+    /// The response `Content-Type`. Defaults to the SSE MIME type so the connector's content-type check
+    /// passes; set it to something else to exercise the rejection path. `nil` sends no header.
+    var contentType: String?
     var chunks: [(delay: Duration, data: Data)]
     var completion: Completion
 
     init(
-      status: Int = 200, chunks: [(delay: Duration, data: Data)] = [],
-      completion: Completion = .finish
+      status: Int = 200, contentType: String? = "text/event-stream",
+      chunks: [(delay: Duration, data: Data)] = [], completion: Completion = .finish
     ) {
       self.status = status
+      self.contentType = contentType
       self.chunks = chunks
       self.completion = completion
     }
@@ -38,6 +42,11 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
 
   private static let registry =
     OSAllocatedUnfairLock<[String: Behavior]>(initialState: [:])
+  /// Per-token queues of behaviors consumed in order across successive connects, so a test can script a
+  /// re-dial (e.g. fail on the first connect, succeed on the second). The last behavior repeats once the
+  /// queue drains, so a trailing `.hangUntilCancelled` parks any further reconnection attempts.
+  private static let sequences =
+    OSAllocatedUnfairLock<[String: [Behavior]]>(initialState: [:])
 
   /// Every request header the stub saw for a given token, recorded in `startLoading` so a test can
   /// assert exactly which headers ``SSEEventStreamConnector`` put on the wire.
@@ -48,13 +57,29 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
     registry.withLock { $0[token] = behavior }
   }
 
+  /// Registers a scripted sequence of behaviors, one popped per connect (the last repeats).
+  static func registerSequence(_ token: String, _ behaviors: [Behavior]) {
+    sequences.withLock { $0[token] = behaviors }
+  }
+
   static func unregister(_ token: String) {
     registry.withLock { $0[token] = nil }
     receivedHeadersByToken.withLock { $0[token] = nil }
+    sequences.withLock { $0[token] = nil }
   }
 
   static func receivedHeaders(for token: String) -> [String: String]? {
     receivedHeadersByToken.withLock { $0[token] }
+  }
+
+  /// Pops the next behavior from a token's sequence, keeping the final one for subsequent connects.
+  private static func nextSequenced(_ token: String) -> Behavior? {
+    sequences.withLock { queues in
+      guard var queue = queues[token], !queue.isEmpty else { return nil }
+      let next = queue.removeFirst()
+      if !queue.isEmpty { queues[token] = queue }
+      return next
+    }
   }
 
   private static func token(for request: URLRequest) -> String? {
@@ -69,7 +94,7 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
   override func startLoading() {
     guard
       let token = Self.token(for: request),
-      let behavior = Self.registry.withLock({ $0[token] })
+      let behavior = Self.nextSequenced(token) ?? Self.registry.withLock({ $0[token] })
     else {
       client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
       return
@@ -85,8 +110,13 @@ final class StreamingStubURLProtocol: URLProtocol, @unchecked Sendable {
       parkedForCancellation.withLock { $0 = true }
     }
 
+    var headerFields: [String: String] = [:]
+    if let contentType = behavior.contentType {
+      headerFields["Content-Type"] = contentType
+    }
     let response = HTTPURLResponse(
-      url: request.url!, statusCode: behavior.status, httpVersion: "HTTP/1.1", headerFields: [:])!
+      url: request.url!, statusCode: behavior.status, httpVersion: "HTTP/1.1",
+      headerFields: headerFields)!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
 
     Task {

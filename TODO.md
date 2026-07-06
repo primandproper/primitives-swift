@@ -137,10 +137,12 @@ Conventions for agents working this list:
   providers are selected, in tension with the no-dep design intent. Move `SwiftLogLogger`/
   `SwiftMetricsProvider` to an interop target (mirroring the ObservabilityOTel separation).
   DONE (swift-log): `SwiftLogLogger` now lives in the new `ObservabilityLog` target; core is
-  swift-log-free and the `.swiftLog` provider case was removed (breaking). **swift-metrics DEFERRED
-  to OBS-20**: the `MetricsProvider` surface returns swift-metrics instrument types and every
-  consumer (HTTPClient/CircuitBreaking/LLM/Analytics) calls them directly, so removing it needs a
-  backend-agnostic instrument abstraction — do it with the OTel port, which forces the same work.
+  swift-log-free and the `.swiftLog` provider case was removed (breaking). **swift-metrics dep RETAINED
+  in core (decision 2026-07-05)**: the `MetricsProvider` surface returns swift-metrics instrument types
+  and every consumer (HTTPClient/CircuitBreaking/LLM/Analytics) calls them directly, so removing it needs
+  a backend-agnostic instrument abstraction. That work was to ride along with the OTLP port — but OBS-20's
+  exporter is now DROPPED, so there's no forcing function and no consumer need. The swift-metrics dep stays
+  in core; accept the minor deviation from the no-dep intent. Revisit only alongside a future OTel backend.
 - [x] **NET-10 follow-up (deferred)** `HTTPClientError.circuitBroken` is not terminal to the Retry
   policy, so a breaker that trips mid-retry fast-fails at the gate (no transport hit) but still
   sleeps between remaining attempts, burning the retry budget. Make `circuitBroken` retry-terminal
@@ -163,7 +165,7 @@ Conventions for agents working this list:
 
 ## Wave 3 — Fill the shallow implementations
 
-- [ ] **SVC-20 (P1)** Analytics: real transports — `SourceConfig.provideCollector()` throws
+- [x] **SVC-20 (P1)** Analytics: real transports — `SourceConfig.provideCollector()` throws
   `unsupportedProvider` for both `segment` and `posthog`; the whole config tree configures nothing.
   Implement thin URLSession+Codable reporters: PostHog `POST {endpoint}/batch`
   (`api_key`, `batch[]` of capture/identify with `$identify`/`$set`), Segment
@@ -172,57 +174,64 @@ Conventions for agents working this list:
   While here: thread an `Observer` through `MultiSourceEventReporter` and log the
   unknown-source→noop fallback (Go does). Also fix the false doc claims that PostHog/Segment "ship
   no iOS SDK" (they do — the real rationale is the no-vendor-SDK policy; reword).
-- [ ] **SVC-21 (P1)** FeatureFlags: a real provider — `makeFeatureFlagManager()` throws for both
+- [x] **SVC-21 (P1)** FeatureFlags: a real provider — `makeFeatureFlagManager()` throws for both
   backends; every flag check in a real app is a noop. Implement a thin native PostHog manager
   against `POST {endpoint}/decide?v=3` (or `/flags?v=2`) with
   `{"api_key", "distinct_id", "person_properties"}`, parsing `featureFlags`/`featureFlagPayloads`
   into the five typed evaluators with fail-open defaults. Carry `CircuitBreakerConfig` in the wire
   shape when this lands (currently deliberately dropped). Note: `LaunchDarklyConfig.sdkKey` is a
   *server* credential — document the mobile-key distinction before any LD wiring.
-- [ ] **SVC-22 (P1)** Notifications: the actual client-side surface — the only seam is the
+- [x] **SVC-22 (P1)** Notifications: the actual client-side surface — the only seam is the
   server-shaped `sendPush` the module doc admits an iOS app can never implement. Add a
   `NotificationCenterManager` protocol (requestAuthorization, remote-token async sequence,
   `schedule(_:)` via `UNUserNotificationCenter`) with live/noop/mock conformers; keep the existing
   wire-compatible payload types.
-- [ ] **NET-20 (P1)** SSE reconnect per WHATWG — `id:` and `retry:` are parsed and dropped; any
+- [x] **NET-20 (P1)** SSE reconnect per WHATWG — `id:` and `retry:` are parsed and dropped; any
   transport blip permanently kills the stream. Track them in `SSEFrameParser`, add a reconnecting
   wrapper (compose the Retry module) that re-dials with `Last-Event-ID`. Deps: NET-11.
   Same pass, spec fixes: strip a leading UTF-8 BOM in `SSELineSplitter`; don't dispatch frames
   with an empty data buffer (or document the divergence); validate
   `Content-Type: text/event-stream` on connect (a 200 HTML error page currently parses as silence).
-- [ ] **NET-21 (P1)** WebSocket keepalive — `heartbeatInterval` is dead config and only server
+- [x] **NET-21 (P1)** WebSocket keepalive — `heartbeatInterval` is dead config and only server
   pings are answered; a NAT-dropped connection parks `receive()` forever. Add `sendPing` to the
   `WebSocketConnection` seam, run a heartbeat loop, close on pong timeout. Same seam extension lets
   `connect` confirm the handshake instead of returning a "connected" stream that can never fail.
-- [ ] **NET-22 (P2)** Streaming-safe URLSession guidance — default/HTTPClient-built sessions kill
+- [x] **NET-22 (P2)** Streaming-safe URLSession guidance — default/HTTPClient-built sessions kill
   quiet or long SSE streams (60s inter-byte idle; resource timeout 3× request). Ship/document a
   streaming session factory or build the session inside the connector.
-- [ ] **OBS-20 (P1)** ObservabilityOTel: make it real — the target is an empty enum. Implement
-  `OTelPillars.make(serviceName:endpoint:)` conformances + OTLP export, and a `W3CPropagation`
-  traceparent/tracestate inject/extract (implementable dependency-free from `SpanContext`; could
-  land in core now). Deps: OBS-10/11/12. Guard the trivial: `IDGen` can mint the all-zero
-  trace/span id W3C declares invalid — loop until nonzero.
-- [ ] **NET-23 (P1)** Trace-context propagation in HTTPClient — the operation opens a span but
+- [~] **OBS-20 (P1, core slice DONE; OTLP exporter DROPPED 2026-07-05)** ObservabilityOTel.
+  **DONE (core slice):** `W3CPropagation` landed in core `Observability` (`Sources/Observability/W3CPropagation.swift`
+  — traceparent/tracestate inject/extract on `URLRequest`, all-zero-id rejection) + the `IDGen`
+  non-zero guard. This unblocked NET-23.
+  **DROPPED (OTLP exporter):** `OTelPillars.make(serviceName:endpoint:)` conformances + OTLP export.
+  **Decision: not needed.** The port's observability is native-first (os_log + signposts/Instruments +
+  MetricKit); NET-23 already propagates `traceparent` on the wire, so nothing is lost at the propagation
+  layer — only *shipping spans to an external OTLP collector*. The exporter is the one genuinely heavy,
+  dependency-bearing piece (OTel Swift SDK or hand-rolled protobuf/gRPC-web), cutting against the
+  thin/native/no-dep rule. Revisit only if a concrete app needs a cloud OTel backend (Jaeger/Tempo/
+  Honeycomb/etc.). `ObservabilityOTel` stays an empty placeholder; drop its empty *product* per REPO-12.
+  Consequence: the swift-metrics dep stays in core (see OBS-14).
+- [x] **NET-23 (P1)** Trace-context propagation in HTTPClient — the operation opens a span but
   never injects `traceparent` into outbound headers, so distributed traces break at the client
   boundary. Inject from the current operation before `session.data(for:)`. Deps: the
   `W3CPropagation` piece of OBS-20.
-- [ ] **OBS-21 (P2)** MetricKit beyond byte counts — `MetricKitDiagnostics` decodes nothing and has
+- [x] **OBS-21 (P2)** MetricKit beyond byte counts — `MetricKitDiagnostics` decodes nothing and has
   no consumer seam. Add a payload-handler closure/delegate, surface crash/hang diagnostics, and
   widen the `os(iOS)` gate to macOS 13 (MXMetricManager exists there for diagnostics).
-- [ ] **NET-24 (P2)** HTTP retry semantics — honor `Retry-After` (numeric *and* HTTP-date; the LLM
+- [x] **NET-24 (P2)** HTTP retry semantics — honor `Retry-After` (numeric *and* HTTP-date; the LLM
   module has the same numeric-only gap) as a delay floor; convert retryable statuses (429/503) into
   retryable errors via the NET-03 classification seam; default retries to idempotent methods with
   per-request opt-in. Also: on cancellation mid-retry, surface `lastError` instead of a bare
   `CancellationError` (Go returns `lastErr`).
-- [ ] **NET-25 (P2)** Bounded buffering — SSE/WS `AsyncThrowingStream`s and the SSE line buffer are
+- [x] **NET-25 (P2)** Bounded buffering — SSE/WS `AsyncThrowingStream`s and the SSE line buffer are
   unbounded (Go used a 64-slot channel). Pass `bufferingPolicy` and cap the line buffer.
-- [ ] **NET-26 (P2)** HTTPClient failure metrics + `waitsForConnectivity` — failed requests emit no
+- [x] **NET-26 (P2)** HTTPClient failure metrics + `waitsForConnectivity` — failed requests emit no
   metrics (timeout storms invisible); expose `waitsForConnectivity`; document that
   `timeoutIntervalForRequest` is inter-byte idle, not Go's total-request timeout.
-- [ ] **CRY-20 (P2)** Compression seam is empty for Go interop — neither Go wire format (zstd, s2)
-  is decodable, so the one client-relevant flow (reading Go-produced payloads) is impossible.
-  Product decision needed: vendored/native-adapter zstd decode vs adding an Apple-compatible
-  algorithm on the Go side. Same pass: consider renaming the `.zlib` case (it's raw DEFLATE).
+- [~] **CRY-20 (P2, DROPPED 2026-07-05)** Compression seam is empty for Go interop — neither Go wire
+  format (zstd, s2) is decodable. **Decision: not needed.** No client flow requires reading
+  Go-compressed payloads; not worth a vendored zstd dep or a Go-side wire change. Revisit only if a
+  concrete app surfaces the need. (Left recorded so future reviews don't re-plow.)
 
 ---
 
