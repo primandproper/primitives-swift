@@ -60,10 +60,14 @@ public enum JWTAlgorithm: String, Sendable {
 /// (`P256`) and Security (`SecKey`) respectively and are the other two schemes a client realistically
 /// meets from an asymmetric identity provider — but they have no counterpart in the Go origin.
 ///
-/// - Note: This type is intentionally **not** `Sendable`: the `rsa` case wraps a `SecKey`
-///   (a non-`Sendable` CoreFoundation type). ``JWTParser`` is used synchronously, so no isolation
-///   boundary is crossed. Keep it that way; do not stash a parser in an actor or `Task`.
-public enum JWTVerificationKey {
+/// - Note: `Sendable` conformance here is `@unchecked`: the `rsa` case wraps a `SecKey`, a
+///   CoreFoundation type the compiler cannot verify as `Sendable`. This is sound in practice —
+///   `SecKey` is immutable once created, is never mutated by this type, and is used exclusively as
+///   the input to `SecKeyVerifySignature`, a synchronous, read-only verification call that Apple's
+///   Security framework treats as safe to invoke from multiple threads/queues concurrently. No
+///   mutable state is shared or crosses an isolation boundary, so treating this type (and the
+///   ``JWTParser`` that stores it) as `Sendable` does not introduce a data race.
+public enum JWTVerificationKey: @unchecked Sendable {
   /// HS256 shared secret. The verifier recomputes HMAC-SHA256 over the signing input.
   case hmac(SymmetricKey)
   /// ES256 public key.
@@ -96,7 +100,12 @@ public enum JWTVerificationKey {
 ///
 /// - Important: The reference time for `exp`/`nbf` is **injected** via `at:` so tests can pin fixed
 ///   instants against forged expiry. ``parse(_:)`` reads `Date()` at the edge.
-public struct JWTParser {
+///
+/// - Note: `Sendable` by inheritance from ``JWTVerificationKey``'s `@unchecked Sendable`
+///   conformance; all other stored properties are plain value types. This lets a parser (HMAC/ES256
+///   included) be captured across isolation boundaries — stored in an actor, or handed to a `Task` /
+///   `@Sendable` closure — even though the `.rsa` case internally holds a non-`Sendable` `SecKey`.
+public struct JWTParser: Sendable {
   private let key: JWTVerificationKey
   private let expectedIssuer: String?
   private let expectedAudience: String?

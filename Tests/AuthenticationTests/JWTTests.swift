@@ -211,3 +211,52 @@ struct JWTAsymmetricTests {
     #expect(claims.subject == "u")
   }
 }
+
+// MARK: - Sendability regression (CRY-11)
+
+/// An actor that holds a ``JWTParser`` as stored state. This only type-checks because
+/// ``JWTVerificationKey`` (and therefore ``JWTParser``) conforms to `Sendable` — before CRY-11 the
+/// `rsa` case's `SecKey` made the type non-`Sendable`, and the compiler would have rejected storing a
+/// parser here with "non-sendable type 'JWTParser' in actor-isolated property".
+private actor TokenVerifier {
+  private let parser: JWTParser
+
+  init(parser: JWTParser) {
+    self.parser = parser
+  }
+
+  func verify(_ token: String, at date: Date) throws -> JWTClaims {
+    try parser.parse(token, at: date)
+  }
+}
+
+@Suite("JWTParser is Sendable (CRY-11)")
+struct JWTParserSendableTests {
+  private let key = Data("HEREISA32CHARSECRETWHICHISMADEUP".utf8)
+  private let now = Date(timeIntervalSince1970: 1_000_000)
+
+  @Test("an HS256 parser can be stored in an actor and used across the isolation boundary")
+  func storedInActor() async throws {
+    let token = signHS256(claims: ["sub": "actor-user", "exp": 2_000_000], key: key)
+    let parser = JWTParser(key: .hs256(secret: key))
+    let verifier = TokenVerifier(parser: parser)
+
+    let claims = try await verifier.verify(token, at: now)
+    #expect(claims.subject == "actor-user")
+  }
+
+  @Test("an HS256 parser can cross into a detached, non-isolated Task via a @Sendable closure")
+  func capturedInSendableTask() async throws {
+    let token = signHS256(claims: ["sub": "task-user", "exp": 2_000_000], key: key)
+    let parser = JWTParser(key: .hs256(secret: key))
+    let deadline = now
+
+    // `Task.detached` requires its closure to be `@Sendable`; capturing `parser` here would not
+    // compile before CRY-11.
+    let claims = try await Task.detached { @Sendable in
+      try parser.parse(token, at: deadline)
+    }.value
+
+    #expect(claims.subject == "task-user")
+  }
+}
