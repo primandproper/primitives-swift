@@ -1,6 +1,6 @@
 # platform-swift — Port Progress
 
-A static survey of all 25 shipping products (targets in `Package.swift`), verified by reading each
+A static survey of all 35 shipping products (targets in `Package.swift`), verified by reading each
 module's `Config`, `Provider`/protocol seam, live-backend, and `Noop`/`Mock` source plus the gap
 markers and deferral notes carried in `TODO.md`. This is a code survey (file presence, provider
 routing, doc-comment deferral markers), not a `swift test` run — see *Caveats* at the bottom.
@@ -25,6 +25,12 @@ no third-party SPM SDKs).
   native backend (CryptoKit, StoreKit, Compression framework, CoreImage, in-memory state machines).
 - **One genuine placeholder:** `ObservabilityOTel` is an empty stub — the OTLP exporter (OBS-20) was
   deliberately **dropped**. W3C propagation, the one piece worth keeping, already shipped in core.
+- **Wave 5 landed 10 new module ports (2026-07-06).** `Secrets` (Keychain), `Cache` (memory TTL/LRU +
+  FileManager disk, Redis dropped), `RateLimiting` (token-bucket actor), `Files` (AsyncSequence readers +
+  sandbox `Dir`), `Fake` (corpus fixtures), `Embeddings` (on-device `NLEmbedding` + OpenAI), `Uploads`
+  (FileManager + presigned-URL background upload, S3 dropped), `Search` (SQLite FTS5 + in-memory cosine),
+  `HealthCheck` (registry actor), and `Panicking` (crash seam) — all native-first, each with seam + Noop +
+  Mock + lenient Config. Only `Database` and `TestSupport` remain deferred.
 
 ## Status by tier (true state)
 
@@ -48,6 +54,8 @@ Real logic, no provider abstraction and no external service. These are *done*, n
 | `Filtering` | ~234 | `Pagination`, `QueryFilter`, `QueryFilteredResult`, `SortDirection`, variable-precision RFC3339 parsing. |
 | `Encoding` | ~230 | `ClientEncoder` protocol + `JSONClientEncoder`, content-type negotiation. |
 | `Retry` | ~311 | `ExponentialBackoffPolicy` (jitter/cap), `Retry-After` delay floor, terminal-error classification; noop policy. |
+| `Fake` | ~472 | Corpus-based fixture generators (names/email/lorem/ids/dates/ranges) over `RandomKit`, plus a seeded `SplitMix64`-backed generator for deterministic SwiftUI preview data. |
+| `Panicking` | ~290 | Injectable `Panicker` seam wrapping `fatalError`/`assertionFailure`/`preconditionFailure`; live + noop + recording/throwing mock (so tests assert a panic without trapping). |
 
 ### Tier 2 — Real native on-device backend (offline / no cloud SaaS)
 Working implementations backed by an Apple framework or an in-memory state machine. The noop doubles as
@@ -66,6 +74,14 @@ via an injected session / `URLProtocol` stub.
 | `EventStream` | ~1423 | Real `URLSession` **SSE** (WHATWG-compliant reconnect, `Last-Event-ID`, BOM strip) + **WebSocket** (keepalive/ping) streams, bounded buffering; noop | — |
 | `Notifications` | ~705 | **Live `UNUserNotificationCenter` client seam** (`NotificationCenterManager`: auth, device-token async sequence, local scheduling) + noop + mock | `PushNotificationSender` (server→device APNs/FCM *send*) is **server-shaped, noop/mock only** by design — an iOS app never sends its own push |
 | `Capitalism` | ~835 | **StoreKit 2** purchase manager (live: products, purchase, entitlements, transaction finishing) + noop + mock | RevenueCat backend **deferred** (config decodes; `provideManager` throws for it) |
+| `Secrets` | ~495 | **Keychain** `SecretSource` (Security framework) preserving Go's missing-vs-empty split (`errSecItemNotFound` → not-found) + env/Info.plist debug source + noop + mock | GCP Secret Manager / AWS SSM / k8s backends **dropped** (provider strings decode, factory throws) |
+| `Cache` | ~756 | Actor **in-memory** cache (TTL expiry + LRU) and **FileManager disk** layer (values via `Encoding`), generic `Cache<T>`/`BatchCache<T>` + noop + mock | **Redis dropped**; provider seam + embedded `CircuitBreakerConfig` kept for a future remote adapter |
+| `RateLimiting` | ~373 | Per-key **token-bucket actor** (`allow(key:count:)`), generic over `Clock<Duration>` (default `ContinuousClock`) so tests don't sleep + noop + mock | Redis sliding-window backend **dropped**; provider seam kept |
+| `Files` | ~743 | **AsyncSequence** line / chunk / windowed readers (class iterator closes the `FileHandle` on early abandonment), typed `Decode<T>`, sandbox-rooted `Dir` rejecting `..`/absolute/symlink escapes + noop + mock | — |
+| `Embeddings` | ~830 | **On-device `NLEmbedding`** (NaturalLanguage) default + **OpenAI** `POST /embeddings` URLSession backend (mirrors `LLM`'s pattern, shared metric/error semantics) + noop + mock | Ollama / Cohere backends **dropped**; embedded `CircuitBreakerConfig` carried-but-inert (LaunchDarkly precedent) |
+| `Uploads` | ~978 | **FileManager** local uploader (sandbox root, traversal-rejecting) + **presigned-URL** `URLSession` upload seam shaped for background uploads + ImageIO thumbnailer + noop + mock | **S3 / gocloud provider set dropped**; presigned seam + embedded `CircuitBreakerConfig` kept |
+| `Search` | ~1183 | **Text** via SQLite **FTS5** (system `SQLite3`, bm25 + porter stemming, in-process testable) + **vector** brute-force **cosine/dot/euclidean** in-memory actor (Embedder-backed convenience) + noop + mock per seam | Elasticsearch/Algolia (text) + pgvector/Qdrant (vector) **dropped**; Go's `circuitBreakerConfig` decode-and-ignored (native, no remote call) |
+| `HealthCheck` | ~519 | `Checker` seam + **registry actor** fanning checks over a `TaskGroup` with hard per-check timeouts; reachability (`NWPathMonitor`), disk-space, and generic closure checkers + noop + mock | Go's DB/cache/MQ checkers collapsed to one closure checker (`Cache` deliberately not imported — app wires a cache-ping later) |
 
 ### Tier 3 — Real cloud/remote transport (thin native URLSession against a SaaS HTTP API)
 Not vendor SDKs — hand-written `URLSession` + `Codable` clients hitting the same HTTP surface the vendor
@@ -97,8 +113,9 @@ SDKs use (the repo's no-vendor-SDK rule). Builds/tests offline via an injected `
   non-streaming `complete` is real.
 - **OTLP exporter** (`ObservabilityOTel`) — dropped (see Tier 4). The target is an empty placeholder; its
   empty *product* is slated for removal from `Package.swift` (REPO-12) once tooling allows.
-- **Redis-backed `Cache`** — the `Cache` module is **not yet ported at all** (planned as PORT-02:
-  actor-backed memory + FileManager disk layer, Redis intentionally dropped, provider seam kept).
+- **Redis-backed `Cache`** — `Cache` ships actor memory (TTL + LRU) + a FileManager disk layer; the Redis
+  backend is **intentionally dropped** (provider seam + embedded `CircuitBreakerConfig` kept for a future
+  remote adapter).
 - **LaunchDarkly** (`FeatureFlags`) and **RevenueCat** (`Capitalism`) — second backends deferred; configs
   decode and validate, but the factory throws for them.
 - **Server-side push send** (`Notifications.PushNotificationSender`) — noop/mock only, by design; sending
@@ -110,9 +127,10 @@ Documented so nobody re-litigates: **email**, **messagequeue**, **routing**, **s
 **distributedlock** (revisit only for app↔extension coordination), **artifacts** (empty in Go).
 
 ### Planned but not yet started (TODO.md Wave 5 port order)
-`Secrets` (Keychain), `Cache`, `RateLimiting`, `Files`, `Fake`, `Embeddings` (NLEmbedding + OpenAI),
-`Uploads`, `Search`, `HealthCheck`, `Panicking`; `Database` / `TestSupport` deferred until a concrete app
-needs them.
+All ten Wave 5 module ports **landed (2026-07-06)**: `Secrets`, `Cache`, `RateLimiting`, `Files`, `Fake`,
+`Embeddings`, `Uploads`, `Search`, `HealthCheck`, `Panicking` (see Tiers 1–2 above). Only `Database`
+(ADAPT — SQLite migration runner) and `TestSupport` (ADAPT of testutils) remain **deferred** until a
+concrete app needs them.
 
 ## Divergence from platform-go
 
@@ -131,8 +149,8 @@ needs them.
 
 - This is a **static read** (file presence, provider routing, doc-comment deferral markers, LOC), not a
   `swift build` / `swift test` run. "Real" means "contains a genuine implementation wired into the
-  `provide*`/factory path," not "verified green in this survey." The suite is reported green at the
-  surveyed base commit (`TODO.md`: 24 modules, ~9.9k LOC).
+  `provide*`/factory path," not "verified green in this survey." The suite is green at the surveyed base
+  commit: 35 modules, 1174 tests passing (Wave 5 added 10 modules / +279 tests over the Wave-4 close).
 - LOC counts are `Sources/<module>/**/*.swift` including inline doc comments.
 - Surveyed from the settled `fable_fixes` line (base `28953e6`), which carries all completed Wave 1–3
   work. If you are reading this from an older worktree base, the service-tier backends above may not yet

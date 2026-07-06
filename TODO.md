@@ -325,29 +325,48 @@ Port order chosen so each module's dependencies exist first. All follow the sett
 protocol seam + Config (lenient Codable) + live native impl + Noop + Mock + Observer threading +
 CircuitBreaking config embedded for remote-backed modules.
 
-- [ ] **PORT-01 (High, S–M)** `Secrets` — Keychain-backed `SecretSource { getSecret, close }`;
+**COMPLETE (2026-07-06).** All ten active ports (PORT-01..10) landed via a parallel worktree fleet
+(nine independent modules concurrently, then Search once Embeddings existed). Package is 35 targets,
+`swift build` + **1174 tests** green (was 895), `make lint` clean. The worktree-fleet base gotcha
+recurred — all worktrees forked from a pre-Wave-1 base — but each port is a self-contained new
+directory, so integration was `git checkout <branch> -- Sources/<M> Tests/<M>Tests` + central
+Package.swift wiring + three trivial API-drift fixes (`Counter`→`MetricCounter` ×2, one missing
+`import CircuitBreaking`). Residual follow-ups recorded inline below. `Database`/`TestSupport` stay
+deferred until a concrete app needs them.
+
+Residual follow-ups (small, standalone; not blockers):
+- **Embeddings**: `OpenAIEmbedderConfig.circuitBreaker` is carried-but-inert — the live breaker isn't
+  built from config yet (matches the accepted `LaunchDarklyConfig` precedent). Wire it if/when a
+  concrete app needs breaker-gated embedding calls.
+- **Search**: Go's `circuitBreakerConfig` is decode-and-ignored (native SQLite/in-memory backends make
+  no remote call). Intentional; revisit only if a remote search adapter lands.
+- **DurationWire**: Wave 5 added two more `internal` copies of the nanoseconds helper (Embeddings,
+  HealthCheck), compounding the REPO-12 residual. A shared low-level target is now more clearly worth
+  it; still a standalone cleanup.
+
+- [x] **PORT-01 (High, S–M)** `Secrets` — Keychain-backed `SecretSource { getSecret, close }`;
   `errSecItemNotFound` maps to the Go not-found/empty distinction; Info.plist/env source for debug.
-- [ ] **PORT-02 (High, M)** `Cache` — `Cache<T>`/`BatchCache<T>` protocols; actor-backed memory
+- [x] **PORT-02 (High, M)** `Cache` — `Cache<T>`/`BatchCache<T>` protocols; actor-backed memory
   (expiry, LRU) + disk layer via FileManager; drop Redis, keep the provider seam. Deps:
   Observability, CircuitBreaking, Encoding.
-- [ ] **PORT-03 (Med, S)** `RateLimiting` — per-key token-bucket actor (`allow(key)`); client-side
+- [x] **PORT-03 (Med, S)** `RateLimiting` — per-key token-bucket actor (`allow(key)`); client-side
   API throttling, sampling, retry pacing. Deps: Observability.
-- [ ] **PORT-04 (Med, S–M)** `Files` — FileHandle/AsyncSequence line & chunk readers, windowed
+- [x] **PORT-04 (Med, S–M)** `Files` — FileHandle/AsyncSequence line & chunk readers, windowed
   reads, typed `Decode<T>`, sandbox-rooted `Dir` (documents/app-group container). Deps: Encoding.
-- [ ] **PORT-05 (Med, M)** `Fake` — hand-rolled no-dep fixture generators (corpus-based fakers);
+- [x] **PORT-05 (Med, M)** `Fake` — hand-rolled no-dep fixture generators (corpus-based fakers);
   doubles as SwiftUI preview data. Deps: RandomKit, Identifiers.
-- [ ] **PORT-06 (Med, S–M)** `Embeddings` — `Embedder` seam; on-device
+- [x] **PORT-06 (Med, S–M)** `Embeddings` — `Embedder` seam; on-device
   `NLEmbedding`/`NLContextualEmbedding` default + OpenAI HTTP backend mirroring the LLM pattern.
   Deps: HTTPClient. (Per the native-seam preference note, same shape as the LLM decision.)
-- [ ] **PORT-07 (Med, M–L)** `Uploads` — FileManager backend + a remote seam shaped for URLSession
+- [x] **PORT-07 (Med, M–L)** `Uploads` — FileManager backend + a remote seam shaped for URLSession
   *background upload* against presigned URLs (no S3 SDK); thin
   `CGImageSourceCreateThumbnailAtIndex` image helper. Deps: HTTPClient, CircuitBreaking.
-- [ ] **PORT-08 (Med, L)** `Search` — port the two protocol families; text via SQLite FTS5 or
+- [x] **PORT-08 (Med, L)** `Search` — port the two protocol families; text via SQLite FTS5 or
   CoreSpotlight, vector via in-memory brute-force cosine (fine on-device). Deps: PORT-06.
-- [ ] **PORT-09 (Low, S)** `HealthCheck` — checker protocol + registry actor with TaskGroup +
+- [x] **PORT-09 (Low, S)** `HealthCheck` — checker protocol + registry actor with TaskGroup +
   per-check timeouts; reachability (`NWPathMonitor`), disk-space, cache-ping checkers; feeds a
   debug screen.
-- [ ] **PORT-10 (Low, S)** `Panicking` — injectable `fatalError`/`assertionFailure` seam;
+- [x] **PORT-10 (Low, S)** `Panicking` — injectable `fatalError`/`assertionFailure` seam;
   port opportunistically.
 - [ ] **PORT-11 (deferred)** `Database` (ADAPT) — migration runner + typed access over local
   SQLite (raw sqlite3 or a seam for SwiftData/GRDB later); drop read/write split and admin

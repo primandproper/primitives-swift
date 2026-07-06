@@ -2,7 +2,7 @@
 
 A Swift port of [`platform-go`](https://github.com/primandproper/platform-go)'s toolkit — the same
 conceptual API across languages, expressed idiomatically for Swift concurrency and iOS. It ships as a
-set of **independent products** (25 libraries: observability, HTTP, event streams, crypto/auth,
+set of **independent products** (35 libraries: observability, HTTP, event streams, crypto/auth,
 analytics, feature flags, LLM, in-app purchase, and more) that you adopt à la carte. The design rules
 are thin/native/no-third-party-SPM-SDK: URLSession + Codable, CryptoKit, StoreKit, UserNotifications,
 with protocol seams shaped so a native or vendor adapter can wrap later.
@@ -328,6 +328,8 @@ module.
 | `Filtering` | pure-logic | 🟡 pagination / query-filter / RFC3339; `FromParams`/`ToPagination` **not ported** |
 | `Encoding` | pure-logic | 🟢 `ClientEncoder` + JSON encoder, content-type negotiation |
 | `Retry` | pure-logic | 🟢 exponential backoff (jitter/cap), `Retry-After` floor; noop |
+| `Fake` | pure-logic | 🟢 corpus-based fixture generators + seeded SwiftUI-preview data |
+| `Panicking` | pure-logic | 🟢 injectable `fatalError`/`assertionFailure` seam; noop + mock |
 | `Cryptography` | native backend | 🟢 CryptoKit AES-GCM (Go-byte-compatible) + SHA-2/checksum hashers; no PASETO |
 | `Authentication` | native backend | 🟢 JWT verify, TOTP/HOTP (RFC 6238), Base32/Base64URL |
 | `Cookies` | native backend | 🟢 HMAC-SHA256 signed cookies (securecookie-compatible) |
@@ -338,11 +340,18 @@ module.
 | `EventStream` | native backend | 🟢 URLSession SSE (WHATWG reconnect, `Last-Event-ID`) + WebSocket (keepalive), bounded buffers; noop |
 | `Notifications` | native backend | 🟡 live `UNUserNotificationCenter` client seam + noop + mock; server-side push **send** is noop-by-design |
 | `Capitalism` | native backend | 🟡 live StoreKit 2 purchase manager + noop + mock; RevenueCat backend **deferred** |
+| `Secrets` | native backend | 🟢 Keychain-backed `SecretSource` + env/Info.plist debug source; noop + mock |
+| `Cache` | native backend | 🟢 actor memory (TTL + LRU) + FileManager disk `Cache<T>`/`BatchCache<T>`; Redis dropped; noop + mock |
+| `RateLimiting` | native backend | 🟢 clock-injectable per-key token-bucket actor; noop + mock |
+| `Files` | native backend | 🟢 AsyncSequence line/chunk/windowed readers, `Decode<T>`, sandbox-rooted `Dir`; noop + mock |
+| `Embeddings` | native backend | 🟢 on-device `NLEmbedding` + OpenAI URLSession backend; noop + mock |
+| `Uploads` | native backend | 🟢 FileManager local + presigned-URL background-upload seam (S3 dropped) + ImageIO thumbnails; noop + mock |
+| `Search` | native backend | 🟢 SQLite FTS5 text + in-memory cosine vector (Embedder-backed); noop + mock |
+| `HealthCheck` | native backend | 🟢 checker + registry actor (per-check timeouts), reachability/disk-space checkers; noop + mock |
 | `Analytics` | cloud transport | 🟢 Segment + PostHog URLSession reporters (buffer/flush, circuit breaker); noop + mock |
 | `FeatureFlags` | cloud transport | 🟡 live PostHog evaluator; LaunchDarkly **deferred** (mobile-key mismatch); noop + mock |
 | `LLM` | cloud transport | 🟡 Anthropic + OpenAI URLSession clients; **streaming deferred** (absent in Go too); noop + mock |
 
-Not yet ported (planned or intentionally skipped): `Cache` (Redis dropped, memory+disk planned),
-`Secrets`, `RateLimiting`, `Files`, `Fake`, `Embeddings`, `Uploads`, `Search`, `HealthCheck`; and the
+Not yet ported: `Database` and `TestSupport` (**deferred** until a concrete app needs them); and the
 server-only **SKIP** list — email, messagequeue, routing, server, reflection, pointer, errors,
 distributedlock, artifacts. Full rationale in [`PORT_PROGRESS.md`](PORT_PROGRESS.md).
