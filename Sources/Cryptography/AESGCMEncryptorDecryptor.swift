@@ -20,7 +20,10 @@ import Foundation
 /// Authentication (GCM's tag) is verified on decrypt: any tampering — or a truncated body past the
 /// nonce — throws ``EncryptionError/authenticationFailed``, exactly as Go's `gcm.Open` returns an error.
 public struct AESGCMEncryptorDecryptor: EncryptorDecryptor {
-  private let key: Data
+  /// The AES-256 master key, held as a CryptoKit `SymmetricKey` rather than raw `Data`. `SymmetricKey`
+  /// stores the key material in CryptoKit's own protected buffer (zeroed on deallocation), which keeps
+  /// the secret out of a plain `Data`'s copy-on-write heap allocation for the life of the type.
+  private let key: SymmetricKey
 
   /// GCM standard nonce length, matching Go's `gcm.NonceSize()`.
   private static let nonceSize = 12
@@ -31,7 +34,12 @@ public struct AESGCMEncryptorDecryptor: EncryptorDecryptor {
     guard key.count == 32 else {
       throw EncryptionError.incorrectKeyLength
     }
-    self.key = key
+    // `SymmetricKey(data:)` copies the bytes into CryptoKit's protected storage. Best-effort: zero our
+    // transient copy afterwards so the raw key doesn't linger in this initializer's heap buffer. (Data
+    // is copy-on-write, so this scrubs our copy, not necessarily the caller's original.)
+    var scratch = key
+    self.key = SymmetricKey(data: scratch)
+    scratch.resetBytes(in: 0..<scratch.count)
   }
 
   /// Convenience initializer accepting the key as raw bytes.
@@ -40,9 +48,8 @@ public struct AESGCMEncryptorDecryptor: EncryptorDecryptor {
   }
 
   public func encrypt(_ content: String) throws -> String {
-    let symmetricKey = SymmetricKey(data: key)
     let nonce = AES.GCM.Nonce()  // fresh random 12-byte nonce per call
-    let sealed = try AES.GCM.seal(Data(content.utf8), using: symmetricKey, nonce: nonce)
+    let sealed = try AES.GCM.seal(Data(content.utf8), using: key, nonce: nonce)
     guard let combined = sealed.combined else {
       // Only nil for non-standard nonce sizes; unreachable with the default 12-byte nonce.
       throw EncryptionError.malformedCiphertext
@@ -60,10 +67,9 @@ public struct AESGCMEncryptorDecryptor: EncryptorDecryptor {
       throw EncryptionError.malformedCiphertext
     }
 
-    let symmetricKey = SymmetricKey(data: key)
     do {
       let box = try AES.GCM.SealedBox(combined: raw)
-      let plaintext = try AES.GCM.open(box, using: symmetricKey)
+      let plaintext = try AES.GCM.open(box, using: key)
       return String(decoding: plaintext, as: UTF8.self)
     } catch {
       // A bad tag, wrong key, or a body too short to hold the 16-byte tag all land here — the same

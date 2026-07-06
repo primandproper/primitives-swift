@@ -95,6 +95,7 @@ public struct AppleCompressor: Compressor {
       while true {
         stream.dst_ptr = destination
         stream.dst_size = Self.streamingChunkSize
+        let sourceRemainingBefore = stream.src_size
 
         let status = compression_stream_process(&stream, flags)
         switch status {
@@ -110,6 +111,13 @@ public struct AppleCompressor: Compressor {
           // more work pending), so keep looping.
           if status == COMPRESSION_STATUS_END {
             return nil
+          }
+          // Liveness guard: a healthy codec always makes progress on an OK status — it either produces
+          // output or consumes input. If an iteration does *neither*, the `while true` would spin
+          // forever. A corrupt/hostile stream (e.g. certain malformed DEFLATE) can provoke exactly this
+          // stall, so treat a no-progress OK as a decode failure rather than hanging the caller.
+          if produced == 0 && stream.src_size == sourceRemainingBefore {
+            return error(for: operation)
           }
         default:  // COMPRESSION_STATUS_ERROR
           return error(for: operation)
