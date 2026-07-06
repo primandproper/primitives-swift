@@ -1,3 +1,4 @@
+import CircuitBreaking
 import Foundation
 import Observability
 import Retry
@@ -148,15 +149,57 @@ struct HTTPClientRetryTests {
 
 @Suite("HTTPClient circuit breaking")
 struct HTTPClientCircuitBreakerTests {
-  /// A breaker whose gate and recorded calls the test can inspect.
+  /// A breaker whose gate and recorded calls the test can inspect. Conforms to the unified async
+  /// ``CircuitBreaking/CircuitBreaker`` protocol (NET-10); its synchronous, lock-guarded method bodies
+  /// still satisfy the protocol's `async` requirements.
   final class TestBreaker: CircuitBreaker, @unchecked Sendable {
     private let state = OSAllocatedUnfairLock(initialState: (open: false, failed: 0, succeeded: 0))
     init(open: Bool) { state.withLock { $0.open = open } }
-    func failed() { state.withLock { $0.failed += 1 } }
-    func succeeded() { state.withLock { $0.succeeded += 1 } }
+    func recordFailure() { state.withLock { $0.failed += 1 } }
+    func recordSuccess() { state.withLock { $0.succeeded += 1 } }
     func canProceed() -> Bool { state.withLock { !$0.open } }
     var failures: Int { state.withLock { $0.failed } }
     var successes: Int { state.withLock { $0.succeeded } }
+  }
+
+  /// A breaker that starts closed and trips permanently open the moment it records its first failure —
+  /// used to prove the gate is re-checked on *every* retry attempt (NET-10), not just once before the
+  /// retry loop.
+  final class TripAfterFirstFailureBreaker: CircuitBreaker, @unchecked Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: (open: false, failed: 0))
+    func recordFailure() { state.withLock { $0.failed += 1; $0.open = true } }
+    func recordSuccess() {}
+    func canProceed() -> Bool { state.withLock { !$0.open } }
+    var failures: Int { state.withLock { $0.failed } }
+  }
+
+  // NET-10: the breaker gate moved from a once-per-`perform` check to a per-attempt check inside the
+  // retried closure. A breaker that trips on the first attempt's failure must fail the remaining retry
+  // attempts fast — at the gate, without hitting the transport again.
+  @Test("the breaker gate is re-checked per retry attempt, short-circuiting once it trips mid-retry")
+  func gateRecheckedPerRetryAttempt() async throws {
+    let token = UUID().uuidString
+    let attempts = AttemptCounter()
+    StubURLProtocol.register(token) { _ in
+      attempts.increment()
+      return .fail(URLError(.timedOut))
+    }
+    defer { StubURLProtocol.unregister(token) }
+
+    let breaker = TripAfterFirstFailureBreaker()
+    let client = HTTPClient(
+      session: stubbedSession(), observer: recordingObserver("test"),
+      metrics: NoopMetricsProvider(), retryPolicy: fastRetryPolicy(maxAttempts: 3),
+      circuitBreaker: breaker)
+
+    await #expect(throws: HTTPClientError.circuitBroken) {
+      _ = try await client.perform(stubbedRequest(token: token))
+    }
+
+    // Only the first attempt reached the network; once the breaker tripped, attempts 2 and 3 were
+    // rejected at the gate and the retry loop surfaced the circuitBroken sentinel.
+    #expect(attempts.value == 1)
+    #expect(breaker.failures == 1)
   }
 
   @Test("an open breaker fails fast with circuitBroken and never hits the transport")

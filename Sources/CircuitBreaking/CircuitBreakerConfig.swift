@@ -72,7 +72,7 @@ public struct CircuitBreakerConfig: Codable, Sendable, Equatable {
     logger: any Logger = NoopLogger(),
     metrics: any MetricsProvider = NoopMetricsProvider(),
     tags: [String: String] = [:],
-    resetTimeout: Duration = StandardCircuitBreaker.defaultResetTimeout
+    resetTimeout: Duration = StandardCircuitBreaker<ContinuousClock>.defaultResetTimeout
   ) -> any CircuitBreaker {
     let cfg = ensuringDefaults()
 

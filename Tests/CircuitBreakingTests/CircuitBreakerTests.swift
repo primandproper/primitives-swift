@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import CircuitBreaking
 
@@ -12,10 +13,33 @@ private actor CallCounter {
 
 private struct Boom: Error {}
 
+/// A manually-driven monotonic ``Clock`` for deterministic breaker timing tests (NET-12). Its instant
+/// only advances when the test calls ``advance(by:)``, so open→half-open transitions can be exercised
+/// without sleeping in real time. It reuses ``ContinuousClock/Instant`` so `Duration == Duration` holds
+/// and never moves backward, honoring ``StandardCircuitBreaker``'s forward-only clock assumption.
+private final class ManualClock: Clock, @unchecked Sendable {
+  typealias Instant = ContinuousClock.Instant
+  typealias Duration = Swift.Duration
+
+  private let state = OSAllocatedUnfairLock(initialState: ContinuousClock().now)
+
+  var now: Instant { state.withLock { $0 } }
+  var minimumResolution: Duration { .zero }
+
+  /// Advances the clock forward. The breaker only ever reads `now`; it never sleeps on this clock.
+  func advance(by duration: Duration) {
+    state.withLock { $0 = $0.advanced(by: duration) }
+  }
+
+  func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+    state.withLock { if deadline > $0 { $0 = deadline } }
+  }
+}
+
 @Suite("StandardCircuitBreaker state machine")
 struct StandardCircuitBreakerTests {
   /// A breaker that is effectively impossible to trip, for happy-path assertions.
-  private func healthyBreaker() -> StandardCircuitBreaker {
+  private func healthyBreaker() -> StandardCircuitBreaker<ContinuousClock> {
     StandardCircuitBreaker(
       name: "healthy", errorRatePercentage: 100, minimumSampleThreshold: 1_000_000,
       resetTimeout: .seconds(60))
@@ -190,6 +214,30 @@ struct StandardCircuitBreakerTests {
     await #expect(throws: URLError.self) {
       try await cb.execute { throw URLError(.cancelled) }
     }
+    #expect(await cb.canProceed())
+  }
+
+  @Test("an injected manual clock drives the open→half-open transition without real sleeping")
+  func manualClockDrivesHalfOpenTransition() async {
+    // NET-12: with the clock injected, elapsed time is fully under the test's control — no Task.sleep.
+    let clock = ManualClock()
+    let cb = StandardCircuitBreaker(
+      name: "manual", errorRatePercentage: 50, minimumSampleThreshold: 1,
+      resetTimeout: .seconds(30), clock: clock)
+
+    await cb.recordFailure()  // 100% over 1 sample -> trips open
+    #expect(await cb.cannotProceed())
+
+    // Still within the 30s reset window: the breaker stays open.
+    clock.advance(by: .seconds(10))
+    #expect(await cb.cannotProceed())
+
+    // Past the reset timeout (total 31s): the breaker is half-open and allows a trial.
+    clock.advance(by: .seconds(21))
+    #expect(await cb.canProceed())
+
+    // A successful trial closes it again — driven entirely by the manual clock.
+    await cb.recordSuccess()
     #expect(await cb.canProceed())
   }
 }

@@ -141,12 +141,12 @@ let package = Package(
     ),
     .target(
       name: "HTTPClient",
-      dependencies: ["Observability", "Retry"],
+      dependencies: ["Observability", "Retry", "CircuitBreaking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "HTTPClientTests",
-      dependencies: ["HTTPClient", "Observability", "Retry"],
+      dependencies: ["HTTPClient", "Observability", "Retry", "CircuitBreaking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(

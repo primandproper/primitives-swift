@@ -14,9 +14,9 @@ struct PartitionedCircuitBreakerTests {
     let keyed = PartitionedCircuitBreaker(global: global, breakers: ["123": dedicated])
 
     // Actors are reference types, so identity distinguishes the dedicated breaker from the shared one.
-    #expect(keyed.breaker(for: "123") as? StandardCircuitBreaker === dedicated)
-    #expect(keyed.breaker(for: "456") as? StandardCircuitBreaker === global)
-    #expect(keyed.breaker(for: "789") as? StandardCircuitBreaker === global)
+    #expect(keyed.breaker(for: "123") as? StandardCircuitBreaker<ContinuousClock> === dedicated)
+    #expect(keyed.breaker(for: "456") as? StandardCircuitBreaker<ContinuousClock> === global)
+    #expect(keyed.breaker(for: "789") as? StandardCircuitBreaker<ContinuousClock> === global)
   }
 
   @Test("with no registered breakers every key falls back to the global one")

@@ -21,21 +21,31 @@ import Observability
 ///   closes the breaker and clears the window; a ``recordFailure()`` re-trips it (pushing `openedAt`
 ///   forward), matching how the Go library's `Success()`/`Fail()` behaved in the half-open state.
 ///
-/// **Clock choice.** All elapsed-time and open-timeout logic uses a monotonic ``ContinuousClock``, not
-/// wall-clock `Date`: a breaker must not spring open or shut because the device clock was corrected,
-/// the user crossed a timezone, or NTP stepped time. `ContinuousClock` only ever moves forward.
+/// **Clock choice.** All elapsed-time and open-timeout logic uses a monotonic clock, not wall-clock
+/// `Date`: a breaker must not spring open or shut because the device clock was corrected, the user
+/// crossed a timezone, or NTP stepped time. The clock is injected — the default is ``ContinuousClock``,
+/// which only ever moves forward — and the type is generic over the injected ``Clock`` so a test can
+/// substitute a manual clock and advance elapsed time deterministically instead of sleeping in real
+/// time. The bucket and open-timeout arithmetic **assume the injected clock is monotonic and
+/// non-decreasing** (the guarantee `ContinuousClock` provides): `bucketIndex` and the `nanoseconds`
+/// helper never see a negative duration, and `windowStart`/`openedAt` are only ever compared against a
+/// later `clock.now`. A clock that steps backward would violate those assumptions, so only forward-only
+/// clocks are supported.
 ///
 /// **Reset timeout.** Go delegated the open→half-open delay to the library's *exponential* backoff (it
 /// grew with each re-trip). The port uses a single configurable ``resetTimeout`` — a fixed delay is
 /// plenty for a client, and the field is the seam to grow it later if a real need appears, rather than
 /// building the backoff machinery up front.
-public actor StandardCircuitBreaker: CircuitBreaker {
+public actor StandardCircuitBreaker<C: Clock>: CircuitBreaker where C.Duration == Duration {
   /// Default rolling-window span (`rubyist`'s `DefaultWindowTime`).
-  public static let defaultWindow: Duration = .seconds(10)
+  ///
+  /// Computed rather than stored because a generic type can't hold a stored static property; the value
+  /// is a constant and independent of the clock type `C`.
+  public static var defaultWindow: Duration { .seconds(10) }
   /// Default number of buckets in the window (`rubyist`'s `DefaultWindowBuckets`).
-  public static let defaultBucketCount = 10
+  public static var defaultBucketCount: Int { 10 }
   /// Default open→half-open delay. A Swift-side choice (Go used the library's exponential backoff).
-  public static let defaultResetTimeout: Duration = .seconds(30)
+  public static var defaultResetTimeout: Duration { .seconds(30) }
 
   private enum State {
     case closed
@@ -51,10 +61,10 @@ public actor StandardCircuitBreaker: CircuitBreaker {
   private let resetTimeout: Duration
   private let bucketNanos: Int64
 
-  private let clock = ContinuousClock()
-  private let windowStart: ContinuousClock.Instant
+  private let clock: C
+  private let windowStart: C.Instant
   private var window: RollingWindow
-  private var openedAt: ContinuousClock.Instant?
+  private var openedAt: C.Instant?
 
   private let logger: any Logger
   private let trippedCounter: MetricCounter
@@ -70,6 +80,8 @@ public actor StandardCircuitBreaker: CircuitBreaker {
   ///   - resetTimeout: How long to stay open before allowing a half-open trial.
   ///   - window: Total rolling-window span.
   ///   - bucketCount: Number of buckets the window is divided into.
+  ///   - clock: The monotonic ``Clock`` driving all elapsed-time math. Defaults to ``ContinuousClock``;
+  ///     tests inject a manual clock to advance time without sleeping. Must be forward-only.
   ///   - logger: Observability logger (defaults to no-op so the breaker is usable un-instrumented).
   ///   - metrics: Observability metrics provider (defaults to no-op).
   ///   - tags: Fixed metric tags — the port of Go's `WithMetricAttributes`, used by the partitioned
@@ -81,6 +93,7 @@ public actor StandardCircuitBreaker: CircuitBreaker {
     resetTimeout: Duration = StandardCircuitBreaker.defaultResetTimeout,
     window: Duration = StandardCircuitBreaker.defaultWindow,
     bucketCount: Int = StandardCircuitBreaker.defaultBucketCount,
+    clock: C = ContinuousClock(),
     logger: any Logger = NoopLogger(),
     metrics: any MetricsProvider = NoopMetricsProvider(),
     tags: [String: String] = [:]
@@ -92,7 +105,8 @@ public actor StandardCircuitBreaker: CircuitBreaker {
     let buckets = max(1, bucketCount)
     self.bucketNanos = max(1, Self.nanoseconds(window / buckets))
     self.window = RollingWindow(bucketCount: buckets)
-    self.windowStart = ContinuousClock().now
+    self.clock = clock
+    self.windowStart = clock.now
     self.logger = logger.withValue("circuit_breaker", name)
     self.trippedCounter = metrics.counter("\(name)_circuit_breaker_tripped", tags: tags)
     self.failedCounter = metrics.counter("\(name)_circuit_breaker_failed", tags: tags)
@@ -144,21 +158,21 @@ public actor StandardCircuitBreaker: CircuitBreaker {
 
   // MARK: - Internals
 
-  private func state(at now: ContinuousClock.Instant) -> State {
+  private func state(at now: C.Instant) -> State {
     guard let openedAt else { return .closed }
     return openedAt.duration(to: now) >= resetTimeout ? .halfOpen : .open
   }
 
   /// Mirrors the Go `ShouldTrip`: enough recent samples *and* a windowed error rate at or above the
   /// configured fraction.
-  private func shouldTrip(at now: ContinuousClock.Instant) -> Bool {
+  private func shouldTrip(at now: C.Instant) -> Bool {
     let (failures, successes) = window.totals(at: bucketIndex(now))
     let total = failures + successes
     guard total >= minimumSampleThreshold, total > 0 else { return false }
     return Double(failures) / Double(total) >= errorRateFraction
   }
 
-  private func bucketIndex(_ now: ContinuousClock.Instant) -> Int {
+  private func bucketIndex(_ now: C.Instant) -> Int {
     Int(Self.nanoseconds(windowStart.duration(to: now)) / bucketNanos)
   }
 

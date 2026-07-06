@@ -1,3 +1,4 @@
+import CircuitBreaking
 import Foundation
 import Observability
 import Retry
@@ -17,14 +18,19 @@ import Retry
 /// - An optional ``Retry/RetryPolicy`` wraps the transport call, so a flaky request is retried per the
 ///   policy's backoff. Retry fires on *thrown* transport errors, not on non-2xx statuses — a 4xx/5xx
 ///   is a successful round-trip that returns an ``HTTPResponse`` (matching Go's `Client.Do`).
-/// - An optional ``CircuitBreaker`` gates requests: an open breaker fails fast with
-///   ``HTTPClientError/circuitBroken``; each attempt records success/failure so repeated faults trip it.
+/// - An injected ``CircuitBreaking/CircuitBreaker`` gates requests (defaulting to a
+///   ``CircuitBreaking/NoopCircuitBreaker`` that never trips, so an un-configured client behaves as if
+///   there were no breaker): an open breaker fails fast with ``HTTPClientError/circuitBroken``, and
+///   *every* attempt re-checks the gate and records success/failure so repeated faults trip it. This is
+///   the same async actor-backed breaker the rest of the platform shares (NET-10 unified the HTTP
+///   client's formerly-separate synchronous breaker contract onto it).
 ///
 /// The type is a `Sendable` value: `URLSession` and every injected dependency are `Sendable`, so an
 /// `HTTPClient` can be shared across tasks and stored in `Sendable` aggregates without ceremony.
 public struct HTTPClient: Sendable {
   /// Classifies a completed response's status code as a circuit-breaker *failure*. Returning `true`
-  /// records ``CircuitBreaker/failed()`` for the attempt; `false` records ``CircuitBreaker/succeeded()``.
+  /// records ``CircuitBreaking/CircuitBreaker/recordFailure()`` for the attempt; `false` records
+  /// ``CircuitBreaking/CircuitBreaker/recordSuccess()``.
   ///
   /// This is a breaking-only concern, orthogonal to what ``perform(_:)`` returns: a non-2xx is still a
   /// successful round-trip that yields an ``HTTPResponse`` (matching Go's `Client.Do`). Without this
@@ -49,7 +55,7 @@ public struct HTTPClient: Sendable {
   private let observer: any Observer
   private let metrics: any MetricsProvider
   private let retryPolicy: (any RetryPolicy)?
-  private let circuitBreaker: (any CircuitBreaker)?
+  private let circuitBreaker: any CircuitBreaker
   private let statusFailureClassifier: StatusFailureClassifier
 
   /// Primary initializer: inject an already-built session, observer, and metrics provider.
@@ -61,7 +67,7 @@ public struct HTTPClient: Sendable {
     observer: any Observer,
     metrics: any MetricsProvider,
     retryPolicy: (any RetryPolicy)? = nil,
-    circuitBreaker: (any CircuitBreaker)? = nil,
+    circuitBreaker: any CircuitBreaker = NoopCircuitBreaker(),
     statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient.defaultStatusFailureClassifier
   ) {
     self.session = session
@@ -82,7 +88,7 @@ public struct HTTPClient: Sendable {
     config: HTTPClientConfig = HTTPClientConfig(),
     pillars: Pillars,
     retryPolicy: (any RetryPolicy)? = nil,
-    circuitBreaker: (any CircuitBreaker)? = nil,
+    circuitBreaker: any CircuitBreaker = NoopCircuitBreaker(),
     statusFailureClassifier: @escaping StatusFailureClassifier = HTTPClient.defaultStatusFailureClassifier
   ) {
     let cfg = config.ensuringDefaults()
@@ -118,13 +124,9 @@ public struct HTTPClient: Sendable {
       op.set(Keys.requestMethod, method)
       op.set(Keys.requestURI, urlString)
 
-      if let circuitBreaker, circuitBreaker.cannotProceed() {
-        // Record + log, but throw the sentinel raw so callers can `catch HTTPClientError.circuitBroken`
-        // the way Go callers compare against `circuitbreaking.ErrCircuitBroken`.
-        op.acknowledge(HTTPClientError.circuitBroken, "circuit breaker open; refusing request")
-        throw HTTPClientError.circuitBroken
-      }
-
+      // The breaker gate is checked *per attempt* inside `performOnce`, not once here: with a retry
+      // policy, a breaker that trips partway through the retries must fail the remaining attempts fast
+      // rather than keep hammering a failing dependency.
       let attempt: @Sendable () async throws -> HTTPResponse = {
         try await performOnce(request, op: op, method: method)
       }
@@ -147,12 +149,21 @@ public struct HTTPClient: Sendable {
   private func performOnce(
     _ request: URLRequest, op: any Observability.Operation, method: String
   ) async throws -> HTTPResponse {
+    // Gate this attempt on the breaker. Rejecting here (rather than once before the retry loop) means a
+    // breaker that trips mid-retry short-circuits the remaining attempts instead of re-hitting the
+    // transport. Throw the sentinel raw so callers can `catch HTTPClientError.circuitBroken` the way Go
+    // callers compare against `circuitbreaking.ErrCircuitBroken`.
+    if await circuitBreaker.cannotProceed() {
+      op.acknowledge(HTTPClientError.circuitBroken, "circuit breaker open; refusing request")
+      throw HTTPClientError.circuitBroken
+    }
+
     let start = DispatchTime.now()
     do {
       let (data, response) = try await session.data(for: request)
 
       guard let http = response as? HTTPURLResponse else {
-        circuitBreaker?.failed()
+        await circuitBreaker.recordFailure()
         op.acknowledge(HTTPClientError.nonHTTPResponse, "response was not an HTTP response")
         throw HTTPClientError.nonHTTPResponse
       }
@@ -163,9 +174,9 @@ public struct HTTPClient: Sendable {
       // purposes a server-fault status must count against the breaker or it can never trip on the most
       // common failure mode. The classifier decides; the default flags 502/503/504.
       if statusFailureClassifier(http.statusCode) {
-        circuitBreaker?.failed()
+        await circuitBreaker.recordFailure()
       } else {
-        circuitBreaker?.succeeded()
+        await circuitBreaker.recordSuccess()
       }
       return HTTPResponse(http: http, body: data)
     } catch let error as HTTPClientError {
@@ -175,12 +186,13 @@ public struct HTTPClient: Sendable {
       // Preserve cancellation unwrapped so the retry loop sees it as terminal (see Retry.isTerminal)
       // and short-circuits instead of sleeping and re-attempting a request the caller abandoned. A
       // cancellation is the caller abandoning the work, not a transport fault, so it must be checked
-      // *before* `failed()` — otherwise a burst of user cancellations could trip a healthy breaker.
+      // *before* `recordFailure()` — otherwise a burst of user cancellations could trip a healthy
+      // breaker.
       if error is CancellationError || (error as? URLError)?.code == .cancelled {
         op.acknowledge(error, "HTTP request cancelled")
         throw error
       }
-      circuitBreaker?.failed()
+      await circuitBreaker.recordFailure()
       throw op.error(error, "HTTP request failed")
     }
   }

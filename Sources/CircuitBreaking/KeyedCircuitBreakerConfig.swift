@@ -54,7 +54,7 @@ public struct KeyedCircuitBreakerConfig: Codable, Sendable, Equatable {
   public func provideKeyedCircuitBreaker(
     logger: any Logger = NoopLogger(),
     metrics: any MetricsProvider = NoopMetricsProvider(),
-    resetTimeout: Duration = StandardCircuitBreaker.defaultResetTimeout
+    resetTimeout: Duration = StandardCircuitBreaker<ContinuousClock>.defaultResetTimeout
   ) -> any KeyedCircuitBreaker {
     do {
       try validate()
