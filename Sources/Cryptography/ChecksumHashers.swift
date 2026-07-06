@@ -12,10 +12,10 @@ import Foundation
 // They provide NO security guarantees and MUST NOT be used for password hashing, digital signatures,
 // tamper resistance, or any security-sensitive purpose. Use ``SHA256Hasher`` / ``SHA512Hasher`` there.
 
-/// A ``Hasher`` backed by the Adler-32 checksum (Go `hash/adler32`).
+/// A ``ContentHasher`` backed by the Adler-32 checksum (Go `hash/adler32`).
 ///
 /// - Warning: non-cryptographic. See the file-level note.
-public struct Adler32Hasher: Hasher {
+public struct Adler32Hasher: ContentHasher {
   public init() {}
 
   public func hash(_ content: String) -> String {
@@ -31,13 +31,13 @@ public struct Adler32Hasher: Hasher {
   }
 }
 
-/// A ``Hasher`` backed by the CRC-64 (ISO polynomial) checksum (Go `hash/crc64` with `crc64.ISO`).
+/// A ``ContentHasher`` backed by the CRC-64 (ISO polynomial) checksum (Go `hash/crc64` with `crc64.ISO`).
 ///
 /// Reproduces Go's reflected, table-driven CRC-64 update (`crc = ^0` start, `~crc` finish) so the
 /// 8-byte big-endian digest matches `crc64.MakeTable(crc64.ISO)`.
 ///
 /// - Warning: non-cryptographic. See the file-level note.
-public struct CRC64Hasher: Hasher {
+public struct CRC64Hasher: ContentHasher {
   public init() {}
 
   /// Go's `crc64.ISO` polynomial (reversed representation).
@@ -70,14 +70,14 @@ public struct CRC64Hasher: Hasher {
   }
 }
 
-/// A ``Hasher`` backed by the FNV-1a 128-bit hash (Go `hash/fnv.New128a`).
+/// A ``ContentHasher`` backed by the FNV-1a 128-bit hash (Go `hash/fnv.New128a`).
 ///
 /// FNV has no CryptoKit analogue and needs 128-bit modular arithmetic, done here with a pair of
 /// `UInt64` (`hi`, `lo`) and full-width multiplication. The 16-byte big-endian digest matches Go's
 /// `New128a` output exactly (validated by known-answer test).
 ///
 /// - Warning: non-cryptographic. See the file-level note.
-public struct FNVHasher: Hasher {
+public struct FNVHasher: ContentHasher {
   public init() {}
 
   // 128-bit FNV offset basis: 0x6c62272e07bb0142_62b821756295c58d.

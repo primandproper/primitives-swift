@@ -44,7 +44,7 @@ struct HashingKnownAnswerTests {
 
 @Suite("Hashing properties")
 struct HashingPropertyTests {
-  private let hashers: [Hasher] = [
+  private let hashers: [ContentHasher] = [
     SHA256Hasher(), SHA512Hasher(), Adler32Hasher(), CRC64Hasher(), FNVHasher(),
   ]
 
