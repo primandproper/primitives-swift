@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// Per-provider client config, ported from platform-go's `openai.Config` **and** `anthropic.Config`.

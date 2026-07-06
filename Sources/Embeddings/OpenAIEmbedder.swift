@@ -13,19 +13,13 @@ import Observability
 /// Like Go, and like `OpenAIProvider`, it **does not retry** — a 429 surfaces as
 /// ``EmbeddingsError/rateLimit(retryAfter:)``.
 ///
-/// **Circuit breaker note (base-inconsistency).** ``OpenAIEmbedderConfig`` carries a
-/// `CircuitBreaking.CircuitBreakerConfig` per the settled rule that a remote-backed module embeds one
-/// (see that type). This code's ``HTTPClient``, however, still models circuit breaking with its own
-/// small *local* `CircuitBreaker` protocol (synchronous `failed()`/`succeeded()`) predating the shared,
-/// actor-backed `CircuitBreaking` module — its own doc comment (`Sources/HTTPClient/CircuitBreaker.swift`)
-/// notes the two are meant to be reconciled "at the wiring site" once adopted. The two protocols are not
-/// bridgeable without either blocking on the actor or reimplementing its bookkeeping, so
-/// ``init(config:pillars:)`` does **not** attempt it: it builds `HTTPClient` with its own
-/// `NoopCircuitBreaker()`, and ``OpenAIEmbedderConfig/circuitBreaker`` stays a carried-but-inert wire
-/// field for now (the identical situation `FeatureFlags`'s `LaunchDarklyConfig` documents for its own
-/// unused `circuitBreakerConfig`). Once `HTTPClient` depends on `CircuitBreaking` — as it already does on
-/// this port's `main` branch — this initializer can wire `circuitBreaker.provideCircuitBreaker(...)`
-/// straight through with no change to ``OpenAIEmbedderConfig``.
+/// **Circuit breaker.** ``OpenAIEmbedderConfig`` carries a `CircuitBreaking.CircuitBreakerConfig` per the
+/// settled rule that a remote-backed module embeds one (see that type), and it is live: ``HTTPClient`` now
+/// depends on `CircuitBreaking` and speaks its shared, actor-backed `CircuitBreaker` protocol directly, so
+/// ``init(config:pillars:)`` builds a real breaker via `circuitBreaker.provideCircuitBreaker(...)` and
+/// threads it straight through — every request runs behind the configured breaker. The primary
+/// ``init(session:observer:metrics:circuitBreaker:apiKey:baseURL:defaultModel:)`` still defaults to
+/// `NoopCircuitBreaker()` so the seam tests can exercise the transport without a breaker.
 public struct OpenAIEmbedder: Embedder {
   /// Observability/metric name. Metrics emit as `openai_embeddings_requests` / `openai_embeddings_errors`
   /// / `openai_embeddings_latency_ms`.
@@ -81,15 +75,18 @@ public struct OpenAIEmbedder: Embedder {
       .knownModelDimensions[OpenAIEmbedder.defaultModel]!
   }
 
-  /// Convenience initializer building the session and observer from config + pillars — the analogue of
-  /// Go's `openai.NewEmbedder(ctx, cfg, logger, tracer)`. See the type doc for why this does not (yet)
-  /// build a live breaker from ``OpenAIEmbedderConfig/circuitBreaker``.
+  /// Convenience initializer building the session, observer, and circuit breaker from config + pillars —
+  /// the analogue of Go's `openai.NewEmbedder(ctx, cfg, logger, tracer)`. The live breaker is built from
+  /// ``OpenAIEmbedderConfig/circuitBreaker`` via `provideCircuitBreaker(logger:metrics:)` and threaded
+  /// into the underlying ``HTTPClient``, so every request is guarded by the configured breaker.
   public init(config: OpenAIEmbedderConfig, pillars: Pillars) {
     self.init(
       session: makeEmbeddingsSession(timeout: config.timeout),
       observer: LiveObserver(
         name: OpenAIEmbedder.o11yName, logger: pillars.logger, tracer: pillars.tracer),
       metrics: pillars.metrics,
+      circuitBreaker: config.circuitBreaker.provideCircuitBreaker(
+        logger: pillars.logger, metrics: pillars.metrics),
       apiKey: config.apiKey,
       baseURL: config.baseURL,
       defaultModel: config.defaultModel

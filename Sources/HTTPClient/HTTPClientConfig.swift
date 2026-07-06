@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// Configuration for an ``HTTPClient``, ported from platform-go's `httpclient.Config`.
@@ -147,23 +148,5 @@ public struct HTTPClientConfig: Codable, Sendable, Equatable {
     try c.encode(maxIdleConnsPerHost, forKey: .maxIdleConnsPerHost)
     try c.encode(enableTracing, forKey: .enableTracing)
     try c.encode(waitsForConnectivity, forKey: .waitsForConnectivity)
-  }
-}
-
-extension Duration {
-  /// This duration as a whole count of nanoseconds — the unit Go's `time.Duration` uses natively and
-  /// marshals to JSON. Truncates any sub-nanosecond resolution.
-  ///
-  /// `Retry` defines an identical helper for its own config; it lives `internal` there, so this module
-  /// carries its own copy rather than reaching across a target boundary for a two-line conversion.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
-  }
-
-  /// This duration as `TimeInterval` (seconds), the unit `URLSessionConfiguration` timeouts expect.
-  var timeInterval: TimeInterval {
-    let (seconds, attoseconds) = components
-    return Double(seconds) + Double(attoseconds) / 1e18
   }
 }

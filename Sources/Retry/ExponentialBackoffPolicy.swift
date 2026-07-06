@@ -1,3 +1,5 @@
+import DurationWire
+
 /// A ``RetryPolicy`` with configurable exponential backoff and optional jitter, ported from
 /// platform-go's unexported `exponentialBackoff` (constructed via `NewExponentialBackoffPolicy`).
 ///

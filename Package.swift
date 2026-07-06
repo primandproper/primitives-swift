@@ -8,6 +8,7 @@ let package = Package(
     .macOS(.v13),
   ],
   products: [
+    .library(name: "DurationWire", targets: ["DurationWire"]),
     .library(name: "Observability", targets: ["Observability"]),
     .library(name: "ObservabilityLog", targets: ["ObservabilityLog"]),
     .library(name: "Filtering", targets: ["Filtering"]),
@@ -42,12 +43,18 @@ let package = Package(
     .library(name: "HealthCheck", targets: ["HealthCheck"]),
     .library(name: "Panicking", targets: ["Panicking"]),
     .library(name: "Search", targets: ["Search"]),
+    .library(name: "Database", targets: ["Database"]),
+    .library(name: "TestSupport", targets: ["TestSupport"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
     .package(url: "https://github.com/apple/swift-metrics.git", from: "2.5.0"),
   ],
   targets: [
+    .target(
+      name: "DurationWire",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .target(
       name: "Observability",
       dependencies: [
@@ -99,11 +106,12 @@ let package = Package(
     ),
     .target(
       name: "Retry",
+      dependencies: ["DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "RetryTests",
-      dependencies: ["Retry"],
+      dependencies: ["Retry", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -163,12 +171,12 @@ let package = Package(
     ),
     .target(
       name: "HTTPClient",
-      dependencies: ["Observability", "Retry", "CircuitBreaking"],
+      dependencies: ["Observability", "Retry", "CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "HTTPClientTests",
-      dependencies: ["HTTPClient", "Observability", "Retry", "CircuitBreaking"],
+      dependencies: ["HTTPClient", "Observability", "Retry", "CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -191,11 +199,12 @@ let package = Package(
     ),
     .target(
       name: "Cookies",
+      dependencies: ["DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "CookiesTests",
-      dependencies: ["Cookies"],
+      dependencies: ["Cookies", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -237,22 +246,22 @@ let package = Package(
     ),
     .target(
       name: "FeatureFlags",
-      dependencies: ["CircuitBreaking"],
+      dependencies: ["CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "FeatureFlagsTests",
-      dependencies: ["FeatureFlags", "CircuitBreaking"],
+      dependencies: ["FeatureFlags", "CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
       name: "EventStream",
-      dependencies: ["Observability", "Retry"],
+      dependencies: ["Observability", "Retry", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "EventStreamTests",
-      dependencies: ["EventStream", "Observability", "Retry"],
+      dependencies: ["EventStream", "Observability", "Retry", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -276,12 +285,12 @@ let package = Package(
     ),
     .target(
       name: "LLM",
-      dependencies: ["Observability"],
+      dependencies: ["Observability", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "LLMTests",
-      dependencies: ["LLM", "Observability"],
+      dependencies: ["LLM", "Observability", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -296,12 +305,12 @@ let package = Package(
     ),
     .target(
       name: "Cache",
-      dependencies: ["Observability", "CircuitBreaking", "Encoding"],
+      dependencies: ["Observability", "CircuitBreaking", "Encoding", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "CacheTests",
-      dependencies: ["Cache", "Observability", "CircuitBreaking", "Encoding"],
+      dependencies: ["Cache", "Observability", "CircuitBreaking", "Encoding", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -336,12 +345,12 @@ let package = Package(
     ),
     .target(
       name: "Embeddings",
-      dependencies: ["HTTPClient", "Observability", "CircuitBreaking"],
+      dependencies: ["HTTPClient", "Observability", "CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "EmbeddingsTests",
-      dependencies: ["Embeddings", "HTTPClient", "Observability", "CircuitBreaking"],
+      dependencies: ["Embeddings", "HTTPClient", "Observability", "CircuitBreaking", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -356,12 +365,12 @@ let package = Package(
     ),
     .target(
       name: "HealthCheck",
-      dependencies: ["Observability"],
+      dependencies: ["Observability", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "HealthCheckTests",
-      dependencies: ["HealthCheck", "Observability"],
+      dependencies: ["HealthCheck", "Observability", "DurationWire"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -382,6 +391,26 @@ let package = Package(
     .testTarget(
       name: "SearchTests",
       dependencies: ["Search", "Embeddings", "Observability"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "Database",
+      dependencies: ["Observability", "Filtering", "DurationWire"],
+      swiftSettings: [.swiftLanguageMode(.v6)],
+      linkerSettings: [.linkedLibrary("sqlite3")]
+    ),
+    .testTarget(
+      name: "DatabaseTests",
+      dependencies: ["Database", "Observability", "Filtering"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .target(
+      name: "TestSupport",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "TestSupportTests",
+      dependencies: ["TestSupport"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
   ]

@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 import HTTPClient
 import Observability

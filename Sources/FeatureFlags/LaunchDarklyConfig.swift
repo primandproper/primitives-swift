@@ -1,3 +1,5 @@
+import DurationWire
+
 /// Configuration for the LaunchDarkly backend, ported from platform-go's `launchdarkly.Config`
 /// (`featureflags/launchdarkly/config.go`).
 ///
@@ -46,15 +48,5 @@ public struct LaunchDarklyConfig: Codable, Sendable, Equatable {
     var c = encoder.container(keyedBy: CodingKeys.self)
     try c.encode(sdkKey, forKey: .sdkKey)
     try c.encode(initTimeout.wholeNanoseconds, forKey: .initTimeout)
-  }
-}
-
-extension Duration {
-  /// This duration as a whole count of nanoseconds, truncating any finer (sub-nanosecond) resolution,
-  /// the unit Go's `time.Duration` uses natively. Mirrors ``Retry``'s internal helper of the same name;
-  /// kept `internal` here too so importing both modules never raises an ambiguity.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
   }
 }

@@ -1,4 +1,5 @@
 import CircuitBreaking
+import DurationWire
 import Encoding
 import Foundation
 import Observability
@@ -120,12 +121,5 @@ extension Duration {
   var timeIntervalValue: TimeInterval {
     let (seconds, attoseconds) = components
     return Double(seconds) + Double(attoseconds) / 1e18
-  }
-
-  /// This duration as a whole count of nanoseconds, the unit Go's `time.Duration` marshals to JSON.
-  /// Mirrors ``FeatureFlags``' internal helper of the same name; kept `internal` to this module.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
   }
 }

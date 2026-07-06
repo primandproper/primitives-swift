@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// Configures ``DiskSpaceChecker``, decoded leniently like every other config in this port.

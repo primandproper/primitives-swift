@@ -1,3 +1,4 @@
+import CircuitBreaking
 import Foundation
 import Observability
 import Testing
@@ -177,5 +178,35 @@ struct OpenAIEmbedderTests {
 
     #expect(vectors.count == 3)
     #expect(calls.value == 3)
+  }
+
+  @Test("the config-built embedder wires a live circuit breaker that opens on repeated failures")
+  func configWiresLiveCircuitBreaker() async {
+    // A live `StandardCircuitBreaker` built from the config trips after a single failed request here
+    // (1-sample threshold, 1% error-rate threshold); a `NoopCircuitBreaker` — the pre-wiring behavior —
+    // never opens, so it could never surface `.circuitBroken`. Point the config-built embedder at an
+    // unreachable loopback port so every request fails fast with connection-refused (no network, no
+    // stub), then assert the breaker short-circuits with `.circuitBroken`: proof the config's breaker is
+    // live, not noop.
+    let config = OpenAIEmbedderConfig(
+      apiKey: "sk-test",
+      baseURL: "http://127.0.0.1:1",
+      circuitBreaker: CircuitBreakerConfig(
+        name: "embeddings-test", errorRate: 1, minimumSampleThreshold: 1))
+    let embedder = OpenAIEmbedder(config: config, pillars: .noop)
+
+    var sawCircuitBroken = false
+    for _ in 0..<6 {
+      do {
+        _ = try await embedder.embed("hello")
+      } catch EmbeddingsError.circuitBroken {
+        sawCircuitBroken = true
+        break
+      } catch {
+        // Transport failure (connection refused) — expected until the breaker trips open.
+      }
+    }
+
+    #expect(sawCircuitBroken)
   }
 }

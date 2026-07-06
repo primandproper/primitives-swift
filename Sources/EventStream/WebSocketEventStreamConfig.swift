@@ -1,3 +1,4 @@
+import DurationWire
 import Foundation
 
 /// WebSocket-specific configuration, ported from platform-go's `websocket.Config`.
@@ -52,15 +53,5 @@ public struct WebSocketEventStreamConfig: Codable, Sendable, Equatable {
     try container.encode(heartbeatInterval.wholeNanoseconds, forKey: .heartbeatInterval)
     try container.encode(readBufferSize, forKey: .readBufferSize)
     try container.encode(writeBufferSize, forKey: .writeBufferSize)
-  }
-}
-
-extension Duration {
-  /// This duration as a whole count of nanoseconds, the unit Go's `time.Duration` marshals to JSON as.
-  /// `HTTPClientConfig`/`RetryConfig` each carry an identical private copy rather than reaching across a
-  /// target boundary for a two-line conversion; this module does the same.
-  var wholeNanoseconds: Int64 {
-    let (seconds, attoseconds) = components
-    return seconds * 1_000_000_000 + attoseconds / 1_000_000_000
   }
 }

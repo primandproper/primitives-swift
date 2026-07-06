@@ -1,4 +1,5 @@
 import CircuitBreaking
+import DurationWire
 import Foundation
 
 /// Configuration for the OpenAI embeddings backend, ported from platform-go's `openai.Config`
