@@ -104,48 +104,58 @@ Conventions for agents working this list:
 
 ## Wave 2 — API/seam changes (breaking; land before tagging 0.1.0)
 
-- [ ] **NET-10 (P1)** Unify the duplicate `CircuitBreaker` protocols — `Sources/HTTPClient/CircuitBreaker.swift`
+- [x] **NET-10 (P1)** Unify the duplicate `CircuitBreaker` protocols — `Sources/HTTPClient/CircuitBreaker.swift`
   vs `Sources/CircuitBreaking/CircuitBreaker.swift`: HTTPClient's seam is sync, the real breaker is
   an async actor, and both modules export colliding `CircuitBreaker`/`NoopCircuitBreaker` names.
   Make HTTPClient depend on CircuitBreaking (Package.swift), delete the local protocol + noop,
   await the async seam (or route through `CircuitBreaking.execute`). Fixes NET-02's policy for
   free; unblocks NET-03. Also re-check the breaker gate per retry attempt, not once per request.
-- [ ] **OBS-10 (P1)** Typed attribute values — `Sources/Observability/Tracer.swift`, `Operation.swift`,
+- [x] **OBS-10 (P1)** Typed attribute values — `Sources/Observability/Tracer.swift`, `Operation.swift`,
   `Logger.swift` all take `Any`, forcing `@unchecked Sendable` contortions (root cause of OBS-01)
   and stringifying everything. Introduce a small `Sendable` `AttributeValue` enum
   (string/int/double/bool/arrays + `ExpressibleBy*Literal` sugar) shared by span/log/operation
   surfaces. Record errors as typed `exception.type`/`exception.message` fields per OTel semconv.
-- [ ] **OBS-11 (P1)** Add the shutdown/flush seam — `Pillars` has no `shutdown()`/`flush()` unlike
+- [x] **OBS-11 (P1)** Add the shutdown/flush seam — `Pillars` has no `shutdown()`/`flush()` unlike
   Go's `Pillars.Shutdown`; the future OTLP exporter needs exactly this hook on
   `didEnterBackground`. Add an async `shutdown()` (default no-op) now so ObservabilityOTel adopts
   it without a breaking change. Shapes OBS-20.
-- [ ] **OBS-12 (P2)** Span protocol gaps for the OTel adapter — add `setStatus(_:)` (Ok/Error/Unset),
+- [x] **OBS-12 (P2)** Span protocol gaps for the OTel adapter — add `setStatus(_:)` (Ok/Error/Unset),
   span-start options (kind: client/internal, initial attributes), and a sampling knob in
   `TracingConfig`. Feeds OBS-20. Same pass: name the tracer per component (today every signpost
   interval shares category `"spans"`/name `"span"`, so Instruments can't group by component —
   and the README's "interval named after the function" claim is wrong; fix both).
-- [ ] **OBS-13 (P1)** Keys parity with Go — `Sources/Observability/Keys.swift` diverges from
+- [x] **OBS-13 (P1)** Keys parity with Go — `Sources/Observability/Keys.swift` diverges from
   `platform-go/observability/keys` (`filter.*` vs `query_filter.*`, `connection.url` vs
   `connection_url`; missing `name`, `url`, `reason`, `search_query`, `validation_error`, `length`,
   `email.*`; Swift invents `path`). Cross-language dashboards silently miss. Reconcile and add a
   parity test pinning each constant's literal value.
-- [ ] **CRY-10 (P1)** Rename the public `Hasher` protocol — `Sources/Cryptography/Hasher.swift`
+- [x] **CRY-10 (P1)** Rename the public `Hasher` protocol — `Sources/Cryptography/Hasher.swift`
   shadows `Swift.Hasher` for any importer, breaking manual `Hashable` conformances. Rename (e.g.
   `ContentHasher`) before the API calcifies; update conformances and tests.
-- [ ] **OBS-14 (P2)** Split swift-log/swift-metrics interop out of the core — the core
+- [x] **OBS-14 (P2, PARTIAL)** Split swift-log/swift-metrics interop out of the core — the core
   `Observability` target hard-depends on both packages even when native `.osLog`/`.signpost`
   providers are selected, in tension with the no-dep design intent. Move `SwiftLogLogger`/
   `SwiftMetricsProvider` to an interop target (mirroring the ObservabilityOTel separation).
-- [ ] **NET-11 (P2)** EventStream request customization — SSE builds its own `URLRequest`, the
+  DONE (swift-log): `SwiftLogLogger` now lives in the new `ObservabilityLog` target; core is
+  swift-log-free and the `.swiftLog` provider case was removed (breaking). **swift-metrics DEFERRED
+  to OBS-20**: the `MetricsProvider` surface returns swift-metrics instrument types and every
+  consumer (HTTPClient/CircuitBreaking/LLM/Analytics) calls them directly, so removing it needs a
+  backend-agnostic instrument abstraction — do it with the OTel port, which forces the same work.
+- [x] **NET-10 follow-up (deferred)** `HTTPClientError.circuitBroken` is not terminal to the Retry
+  policy, so a breaker that trips mid-retry fast-fails at the gate (no transport hit) but still
+  sleeps between remaining attempts, burning the retry budget. Make `circuitBroken` retry-terminal
+  (Retry `isTerminal`, or wrap in `UnretryableError`) — deferred because it changes the thrown type
+  and would break `catch HTTPClientError.circuitBroken`. Fold into NET-24 (HTTP retry semantics).
+- [x] **NET-11 (P2)** EventStream request customization — SSE builds its own `URLRequest`, the
   WebSocket connector takes a bare URL; no way to pass auth headers (tests smuggle tokens through
   query params). Accept `URLRequest`/headers in `connect`. Prerequisite for NET-20 (Last-Event-ID).
-- [ ] **NET-12 (P2)** `StandardCircuitBreaker` clock injection — make the actor generic over
+- [x] **NET-12 (P2)** `StandardCircuitBreaker` clock injection — make the actor generic over
   `Clock<Duration>` (default `ContinuousClock`) so half-open tests stop sleeping. Unblocks NET-22/23.
-- [ ] **OBS-15 (P2)** Drop or namespace the bare `Counter`/`Gauge`/`Histogram` re-export
+- [x] **OBS-15 (P2)** Drop or namespace the bare `Counter`/`Gauge`/`Histogram` re-export
   typealiases (collide with SwiftUI `Gauge` etc.; `MetricTimer` is already prefixed for that reason).
-- [ ] **SVC-10 (P2)** Standardize factory injection — `CapitalismConfig.provideManager` takes a
+- [x] **SVC-10 (P2)** Standardize factory injection — `CapitalismConfig.provideManager` takes a
   prebuilt `Observer` while `LLMConfig` takes `Pillars`; pick one (recommend `Pillars`) repo-wide.
-- [ ] **CRY-11 (P2)** `JWTVerificationKey`/`JWTParser` are non-`Sendable` solely due to the
+- [x] **CRY-11 (P2)** `JWTVerificationKey`/`JWTParser` are non-`Sendable` solely due to the
   `SecKey` case, blocking actor storage of HMAC/ES256 parsers. Either `@unchecked Sendable` with a
   documented SecKey-immutability argument or split the RSA case into its own parser type.
 
