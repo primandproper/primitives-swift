@@ -43,6 +43,21 @@ targets: [
 Or in Xcode: **File ▸ Add Package Dependencies…** and select the libraries you want. See the
 [module table](#modules) for the full product list.
 
+### Releases & versioning
+
+Releases are plain **SemVer git tags** (bare `X.Y.Z`, no `v` prefix) — SPM resolves your version
+requirement against them; there's no registry step. All products share one version.
+
+While the package is pre-1.0, SemVer treats the **minor** as the breaking bump, so `from: "0.1.0"`
+resolves `0.1.0 ..< 0.2.0` **only** (not up to `1.0`). For the safest pin during `0.x`, cap at the
+next minor explicitly:
+
+```swift
+.package(url: "https://github.com/primandproper/platform-swift.git", .upToNextMinor(from: "0.1.0")),
+```
+
+For the full versioning policy and the release process, see [`RELEASING.md`](RELEASING.md).
+
 ## Concepts
 
 | Type | Role |

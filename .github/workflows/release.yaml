@@ -1,0 +1,56 @@
+---
+# Validates a published release against its tagged commit. In SPM a release *is*
+# the git tag (consumers resolve `from:`/`exact:` against tags, not GitHub
+# Releases), so this is a safety net + the canonical "this tag was validated"
+# signal — not a pre-publish gate. See RELEASING.md.
+on:
+  release:
+    types: [published, prereleased]   # prereleased covers 0.x betas like 0.3.0-beta.1
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false           # never cancel a release validation midway
+
+name: release
+permissions:
+  contents: write                     # needed to retract (edit) the release on failure
+jobs:
+  validate:
+    timeout-minutes: 30
+    runs-on: macos-15
+    steps:
+      - name: Guard SemVer tag
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          echo "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "::error::tag '$tag' is not bare SemVer (X.Y.Z)"; exit 1; }
+
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Build (iOS)
+        run: make build-ios
+
+      - name: Retract release on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ github.event.release.tag_name }}" --draft \
+            --notes "⚠️ Automated validation failed for this tag — retracted to draft. See the failed 'release' run. The git tag still exists and remains SPM-resolvable; delete it (git push --delete origin <tag>) and cut a patch."
