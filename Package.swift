@@ -32,7 +32,6 @@ let package = Package(
     .library(name: "EventStream", targets: ["EventStream"]),
     .library(name: "Notifications", targets: ["Notifications"]),
     .library(name: "Capitalism", targets: ["Capitalism"]),
-    .library(name: "LLM", targets: ["LLM"]),
     .library(name: "Secrets", targets: ["Secrets"]),
     .library(name: "Cache", targets: ["Cache"]),
     .library(name: "RateLimiting", targets: ["RateLimiting"]),
@@ -41,7 +40,6 @@ let package = Package(
     .library(name: "Embeddings", targets: ["Embeddings"]),
     .library(name: "Uploads", targets: ["Uploads"]),
     .library(name: "HealthCheck", targets: ["HealthCheck"]),
-    .library(name: "Panicking", targets: ["Panicking"]),
     .library(name: "Search", targets: ["Search"]),
     .library(name: "Database", targets: ["Database"]),
     .library(name: "TestSupport", targets: ["TestSupport"]),
@@ -284,16 +282,6 @@ let package = Package(
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
-      name: "LLM",
-      dependencies: ["Observability", "DurationWire"],
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .testTarget(
-      name: "LLMTests",
-      dependencies: ["LLM", "Observability", "DurationWire"],
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .target(
       name: "Secrets",
       dependencies: ["Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
@@ -373,15 +361,6 @@ let package = Package(
     .testTarget(
       name: "HealthCheckTests",
       dependencies: ["HealthCheck", "Observability", "DurationWire"],
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .target(
-      name: "Panicking",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .testTarget(
-      name: "PanickingTests",
-      dependencies: ["Panicking"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
