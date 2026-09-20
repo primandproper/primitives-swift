@@ -1,11 +1,18 @@
-# platform-swift
+# primitives-swift
 
-A Swift port of [`platform-go`](https://github.com/primandproper/platform-go)'s toolkit — the same
+A Swift port of [`primitives-go`](https://github.com/primandproper/primitives-go)'s toolkit — the same
 conceptual API across languages, expressed idiomatically for Swift concurrency and iOS. It ships as a
-set of **independent products** (35 libraries: observability, HTTP, event streams, crypto/auth,
-analytics, feature flags, LLM, in-app purchase, and more) that you adopt à la carte. The design rules
+set of **independent products** (33 libraries: observability, HTTP, event streams, crypto/auth,
+analytics, feature flags, in-app purchase, and more) that you adopt à la carte. The design rules
 are thin/native/no-third-party-SPM-SDK: URLSession + Codable, CryptoKit, StoreKit, UserNotifications,
 with protocol seams shaped so a native or vendor adapter can wrap later.
+
+**Scope: the device.** Swift builds apps here, never services — `platform-go` is the only server tier
+there is. That makes this port unusual among the primitives ports in how *little* is out of scope:
+`Database` is SQLite on device, `Search` is a `SQLiteTextSearcher` over it, `Capitalism` is StoreKit,
+`HealthCheck` is reachability and disk space. What does not belong is anything that would put a vendor
+API key on a handset, or that only makes sense beside server infrastructure. Talking to a service built
+on `platform-go` is `platform-client-swift`'s job, not this package's.
 
 The keystone — and the deepest port — is **observability**. Its **Observer / Operation** abstraction is
 a per-component bundle of a named logger and tracer, where `op.set(key, value)` records to **both** the
@@ -28,13 +35,13 @@ Add the package once, then depend on just the products you need — each library
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/primandproper/platform-swift.git", from: "0.1.0"),
+    .package(url: "https://github.com/primandproper/primitives-swift.git", from: "0.1.0"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
-        .product(name: "Observability", package: "platform-swift"),
-        .product(name: "HTTPClient",    package: "platform-swift"),
-        .product(name: "Analytics",     package: "platform-swift"),
+        .product(name: "Observability", package: "primitives-swift"),
+        .product(name: "HTTPClient",    package: "primitives-swift"),
+        .product(name: "Analytics",     package: "primitives-swift"),
         // …add any of the products in the module table below
     ]),
 ]
@@ -53,7 +60,7 @@ resolves `0.1.0 ..< 0.2.0` **only** (not up to `1.0`). For the safest pin during
 next minor explicitly:
 
 ```swift
-.package(url: "https://github.com/primandproper/platform-swift.git", .upToNextMinor(from: "0.1.0")),
+.package(url: "https://github.com/primandproper/primitives-swift.git", .upToNextMinor(from: "0.1.0")),
 ```
 
 For the full versioning policy and the release process, see [`RELEASING.md`](RELEASING.md).
@@ -186,7 +193,7 @@ pillars.metrics.timer("request.duration").recordNanoseconds(elapsed)
 ## Configuration & backends
 
 `ObservabilityConfig` is plain `Codable` — build it in code or decode it from Info.plist / JSON
-(unlike platform-go, iOS apps don't configure from the environment).
+(unlike a platform-go service, iOS apps don't configure from the environment).
 
 ```swift
 var config = ObservabilityConfig(serviceName: "MyApp")
@@ -231,7 +238,7 @@ try await observer.operation("parent") { _ in
 }
 ```
 
-This is the implicit equivalent of platform-go returning a new `ctx` from `Begin`.
+This is the implicit equivalent of primitives-go returning a new `ctx` from `Begin`.
 
 ## iOS integration
 
@@ -275,7 +282,7 @@ final class ProfileViewModel: ObservableObject {
 
 ### MetricKit diagnostics
 
-The iOS analogue of platform-go's profiling pillar. Subscribe at launch to receive MetricKit's daily
+The iOS analogue of primitives-go's profiling pillar. Subscribe at launch to receive MetricKit's daily
 power/performance and crash-diagnostics payloads:
 
 ```swift
@@ -344,7 +351,6 @@ module.
 | `Encoding` | pure-logic | 🟢 `ClientEncoder` + JSON encoder, content-type negotiation |
 | `Retry` | pure-logic | 🟢 exponential backoff (jitter/cap), `Retry-After` floor; noop |
 | `Fake` | pure-logic | 🟢 corpus-based fixture generators + seeded SwiftUI-preview data |
-| `Panicking` | pure-logic | 🟢 injectable `fatalError`/`assertionFailure` seam; noop + mock |
 | `Cryptography` | native backend | 🟢 CryptoKit AES-GCM (Go-byte-compatible) + SHA-2/checksum hashers; no PASETO |
 | `Authentication` | native backend | 🟢 JWT verify, TOTP/HOTP (RFC 6238), Base32/Base64URL |
 | `Cookies` | native backend | 🟢 HMAC-SHA256 signed cookies (securecookie-compatible) |
@@ -365,7 +371,6 @@ module.
 | `HealthCheck` | native backend | 🟢 checker + registry actor (per-check timeouts), reachability/disk-space checkers; noop + mock |
 | `Analytics` | cloud transport | 🟢 Segment + PostHog URLSession reporters (buffer/flush, circuit breaker); noop + mock |
 | `FeatureFlags` | cloud transport | 🟡 live PostHog evaluator; LaunchDarkly **deferred** (mobile-key mismatch); noop + mock |
-| `LLM` | cloud transport | 🟡 Anthropic + OpenAI URLSession clients; **streaming deferred** (absent in Go too); noop + mock |
 
 Not yet ported: `Database` and `TestSupport` (**deferred** until a concrete app needs them); and the
 server-only **SKIP** list — email, messagequeue, routing, server, reflection, pointer, errors,
