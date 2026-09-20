@@ -1,5 +1,4 @@
 import Foundation
-import Identifiers
 import RandomKit
 
 /// # Fake
@@ -96,9 +95,12 @@ public enum Fake: Sendable {
     UUID().uuidString
   }
 
-  /// A random 20-character xid string. Delegates to ``Identifiers/Identifier/new()``.
-  public static func xid() -> String {
-    Identifier.new()
+  /// A random 20-character lowercase base32-hex string, shaped like a server-issued ID
+  /// without being one. A client never mints a server's identifiers; this exists so tests
+  /// have a plausible stand-in for one the server would have sent.
+  public static func opaqueID() -> String {
+    var source = SystemFakeSource()
+    return FakeEngine.opaqueID(using: &source)
   }
 
   /// A random `Bool`.

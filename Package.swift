@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "platform-swift",
+  name: "primitives-swift",
   platforms: [
     .iOS(.v16),
     .macOS(.v13),
@@ -14,7 +14,6 @@ let package = Package(
     .library(name: "Filtering", targets: ["Filtering"]),
     .library(name: "APIErrors", targets: ["APIErrors"]),
     .library(name: "Retry", targets: ["Retry"]),
-    .library(name: "Identifiers", targets: ["Identifiers"]),
     .library(name: "RandomKit", targets: ["RandomKit"]),
     .library(name: "Numbers", targets: ["Numbers"]),
     .library(name: "Bitmask", targets: ["Bitmask"]),
@@ -110,15 +109,6 @@ let package = Package(
     .testTarget(
       name: "RetryTests",
       dependencies: ["Retry", "DurationWire"],
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .target(
-      name: "Identifiers",
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .testTarget(
-      name: "IdentifiersTests",
-      dependencies: ["Identifiers"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
@@ -323,12 +313,12 @@ let package = Package(
     ),
     .target(
       name: "Fake",
-      dependencies: ["RandomKit", "Identifiers"],
+      dependencies: ["RandomKit"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "FakeTests",
-      dependencies: ["Fake", "RandomKit", "Identifiers"],
+      dependencies: ["Fake", "RandomKit"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(

@@ -2,7 +2,7 @@
 
 A Swift port of [`primitives-go`](https://github.com/primandproper/primitives-go)'s toolkit — the same
 conceptual API across languages, expressed idiomatically for Swift concurrency and iOS. It ships as a
-set of **independent products** (33 libraries: observability, HTTP, event streams, crypto/auth,
+set of **independent products** (32 libraries: observability, HTTP, event streams, crypto/auth,
 analytics, feature flags, in-app purchase, and more) that you adopt à la carte. The design rules
 are thin/native/no-third-party-SPM-SDK: URLSession + Codable, CryptoKit, StoreKit, UserNotifications,
 with protocol seams shaped so a native or vendor adapter can wrap later.
@@ -13,6 +13,11 @@ there is. That makes this port unusual among the primitives ports in how *little
 `HealthCheck` is reachability and disk space. What does not belong is anything that would put a vendor
 API key on a handset, or that only makes sense beside server infrastructure. Talking to a service built
 on `platform-go` is `platform-client-swift`'s job, not this package's.
+
+Identifiers are the case worth naming, since this package used to carry a full xid
+implementation: a server issues IDs and a client receives opaque strings, so minting one here
+only risks having it rejected by the service you send it to. ``Fake/opaqueID()`` produces an
+ID-*shaped* string for test data and deliberately parses nothing.
 
 The keystone — and the deepest port — is **observability**. Its **Observer / Operation** abstraction is
 a per-component bundle of a named logger and tracer, where `op.set(key, value)` records to **both** the
@@ -344,7 +349,6 @@ module.
 | `Bitmask` | pure-logic | 🟢 bitmask set ops, full Go parity |
 | `Numbers` | pure-logic | 🟢 numeric helpers + range clamping |
 | `Version` | pure-logic | 🟢 build/version info, JSON + text rendering |
-| `Identifiers` | pure-logic | 🟢 `XID` (Go xid wire-compatible, wrap-safe) |
 | `RandomKit` | pure-logic | 🟢 `SecRandomCopyBytes` generator, Base32, slice helpers; noop |
 | `APIErrors` | pure-logic | 🟢 `APIResponse` / `ErrorCode` types |
 | `Filtering` | pure-logic | 🟡 pagination / query-filter / RFC3339; `FromParams`/`ToPagination` **not ported** |
