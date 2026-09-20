@@ -59,6 +59,17 @@ enum FakeEngine {
     return String(format: "(%03d) %03d-%04d", area, exchange, line)
   }
 
+  /// The base32-hex alphabet (lowercased), which is what server-issued IDs happen to look
+  /// like. Nothing here parses or validates an ID — this produces a string of the right
+  /// *shape* for test data, and deliberately carries no timestamp or machine identity.
+  private static let opaqueIDAlphabet = Array("0123456789abcdefghijklmnopqrstuv")
+
+  /// A 20-character lowercase base32-hex string, drawn entirely from `source` so a seeded
+  /// generator reproduces it.
+  static func opaqueID<S: FakeSource>(using source: inout S) -> String {
+    String((0..<20).map { _ in source.pick(from: opaqueIDAlphabet) ?? "0" })
+  }
+
   static func url<S: FakeSource>(using source: inout S) -> String {
     let host = word(using: &source)
     let tld = source.pick(from: FakeCorpus.topLevelDomains) ?? "com"

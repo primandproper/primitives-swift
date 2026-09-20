@@ -1,5 +1,4 @@
 import Foundation
-import Identifiers
 
 /// A seeded, reproducible counterpart to ``Fake``, for callers that need the *same* fixture data
 /// every time — most notably SwiftUI `#Preview` bodies, which re-render on every canvas refresh
@@ -15,11 +14,9 @@ import Identifiers
 /// non-deterministic one — so two generators constructed with the same seed and driven through the
 /// same call sequence always produce identical output.
 ///
-/// **Where seeding is not feasible.** ``uuid()`` and ``xid()`` delegate to `Foundation.UUID` and
-/// ``Identifiers/Identifier/new()`` respectively, neither of which exposes a seedable API (xid in
-/// particular mixes in wall-clock time, machine ID, and process ID by design) — so these two
-/// remain non-deterministic even on a seeded generator. Every other generator here is fully
-/// reproducible.
+/// **Where seeding is not feasible.** ``uuid()`` delegates to `Foundation.UUID`, which exposes no
+/// seedable API, so it remains non-deterministic even on a seeded generator. Every other generator
+/// here is fully reproducible — including ``opaqueID()``, which replaced an `xid()` that was not.
 public struct FakeGenerator: Sendable {
   private var source: SeededFakeSource
 
@@ -87,10 +84,11 @@ public struct FakeGenerator: Sendable {
     UUID().uuidString
   }
 
-  /// A random 20-character xid string. Not seed-reproducible — see the type-level discussion
-  /// above.
-  public func xid() -> String {
-    Identifier.new()
+  /// A reproducible 20-character lowercase base32-hex string, shaped like a server-issued
+  /// ID without being one. Unlike the `xid()` this replaces, it is drawn from the seeded
+  /// source, so a seeded generator reproduces it.
+  public mutating func opaqueID() -> String {
+    FakeEngine.opaqueID(using: &source)
   }
 
   /// A reproducible random `Bool`.

@@ -1,5 +1,4 @@
 import Foundation
-import Identifiers
 import Testing
 
 @testable import Fake
@@ -76,9 +75,11 @@ struct FakeStaticGeneratorTests {
     #expect(UUID(uuidString: Fake.uuid()) != nil)
   }
 
-  @Test("xid is a valid Identifiers xid")
-  func xid() {
-    #expect(Identifier.isValid(Fake.xid()))
+  @Test("opaqueID is 20 lowercase base32-hex characters")
+  func opaqueID() {
+    let id = Fake.opaqueID()
+    #expect(id.count == 20)
+    #expect(id.allSatisfy { "0123456789abcdefghijklmnopqrstuv".contains($0) })
   }
 
   @Test("bool returns without trapping")
@@ -139,6 +140,8 @@ struct FakeGeneratorSeededTests {
     #expect(a.int(in: 0...1000) == b.int(in: 0...1000))
     #expect(a.double(in: 0...1000) == b.double(in: 0...1000))
     #expect(a.pick(from: [1, 2, 3, 4, 5]) == b.pick(from: [1, 2, 3, 4, 5]))
+    // opaqueID replaced an xid() that could not be seeded; this is the difference.
+    #expect(a.opaqueID() == b.opaqueID())
   }
 
   @Test("different seeds are very likely to diverge")
