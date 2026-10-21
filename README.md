@@ -372,7 +372,7 @@ module.
 | `Cache` | native backend | 🟢 actor memory (TTL + LRU) + FileManager disk `Cache<T>`/`BatchCache<T>`; Redis dropped; noop + mock |
 | `RateLimiting` | native backend | 🟢 clock-injectable per-key token-bucket actor; noop + mock |
 | `Files` | native backend | 🟢 AsyncSequence line/chunk/windowed readers, `Decode<T>`, sandbox-rooted `Dir`; noop + mock |
-| `Embeddings` | native backend | 🟢 on-device `NLEmbedding` + OpenAI URLSession backend; noop + mock |
+| `Embeddings` | native backend | 🟢 on-device `NLEmbedding`; OpenAI dropped (API key on device); noop + mock |
 | `Uploads` | native backend | 🟢 FileManager local + presigned-URL background-upload seam (S3 dropped) + ImageIO thumbnails; noop + mock |
 | `Search` | native backend | 🟢 SQLite FTS5 text + in-memory cosine vector (Embedder-backed); noop + mock |
 | `HealthCheck` | native backend | 🟢 checker + registry actor (per-check timeouts), reachability/disk-space checkers; noop + mock |

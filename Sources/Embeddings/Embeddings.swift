@@ -21,25 +21,14 @@
 /// had — Go callers embed one document at a time too, so the default sequential loop is not a behavioral
 /// gap, just less boilerplate for a caller embedding many chunks.
 ///
-/// **Backends kept vs. dropped.** Per the settled port architecture (thin/native/no-dependency, drop
-/// server backends that have no iOS analogue), Go's Ollama (a self-hosted HTTP server meant to run
-/// alongside a backend deployment) and Cohere (another cloud REST API, offering nothing OpenAI's kept
-/// backend doesn't already demonstrate) are **dropped** — there is no iOS-native reason to carry three
-/// near-identical HTTP client implementations when one (OpenAI) fully exercises the pattern. What ships
-/// instead:
+/// **Backends kept vs. dropped.** All three of Go's backends are **dropped**. OpenAI and Cohere are
+/// cloud REST APIs that need a vendor API key, which a shipped app cannot hold (the same reason `LLM`
+/// was removed); anything that needs one belongs behind a `platform-go` service. Ollama is a self-hosted
+/// HTTP server meant to run alongside a backend deployment. What ships instead:
 ///   * ``OnDeviceEmbedder`` — a **new**, iOS-native backend with no Go counterpart, wrapping
 ///     `NaturalLanguage`'s `NLEmbedding.sentenceEmbedding(for:)`. Free, offline, and synchronous, it is
 ///     the natural default embedder for a mobile app (no network, no API key) — see its own doc comment
 ///     for why `NLEmbedding` was chosen over `NLContextualEmbedding`.
-///   * ``OpenAIEmbedder`` — a **live** adapter (`URLSession` via ``HTTPClient``) mirroring
-///     `Sources/LLM`'s `OpenAIProvider` pattern exactly: the same request/response `Codable` shape, the
-///     same `openai_embeddings_requests`/`_errors`/`_latency_ms` metric-naming convention, the same
-///     ``EmbeddingsError`` status-classification table, and the same no-internal-retry contract (a 429
-///     surfaces as ``EmbeddingsError/rateLimit(retryAfter:)`` for the caller to back off on). Unlike LLM,
-///     this backend also threads a `CircuitBreaking.CircuitBreakerConfig` through
-///     ``OpenAIEmbedderConfig`` — wrapping every request in a live circuit breaker via ``HTTPClient`` —
-///     the settled rule for remote-backed modules. Go's embeddings config carries no such field, so this
-///     is a deliberate port-side hardening, not a literal translation.
 ///   * ``NoopEmbedder`` and actor ``EmbedderMock`` — the no-op default and test double, ported from Go's
 ///     `noop`/`mock` packages.
 ///   * ``EmbeddingsConfig`` — the wire-compatible `Codable` config tree (Go's `env:` tags dropped per the

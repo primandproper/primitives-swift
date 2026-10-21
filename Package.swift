@@ -323,14 +323,12 @@ let package = Package(
     ),
     .target(
       name: "Embeddings",
-      dependencies: ["HTTPClient", "Observability", "CircuitBreaking", "DurationWire"],
+      dependencies: ["Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .testTarget(
       name: "EmbeddingsTests",
-      dependencies: [
-        "Embeddings", "HTTPClient", "Observability", "CircuitBreaking", "DurationWire",
-      ],
+      dependencies: ["Embeddings", "Observability"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .target(
