@@ -19,7 +19,7 @@ import Observability
 /// the same residual caveat Go's design carried.
 ///
 /// **Observability.** Ported per this port's settled convention (see `PORTING.md`) rather than from any Go
-/// counterpart — the Go package has none. Each check runs inside its own ``Observability/Operation`` (named
+/// counterpart — the Go package has none. Each check runs inside its own ``Observability/ObservedOperation`` (named
 /// for the checker), and the overall `checkAll()` call runs inside one more, recording the checker count and
 /// aggregate status.
 public actor HealthCheckRegistry {

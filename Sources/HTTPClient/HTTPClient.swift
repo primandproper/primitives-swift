@@ -188,7 +188,7 @@ public struct HTTPClient: Sendable {
   /// so the retry loop re-attempts it; the telemetry/breaker outcome for that round-trip is recorded
   /// first, since the round-trip itself *did* complete.
   private func performOnce(
-    _ request: URLRequest, op: any Observability.Operation, method: String,
+    _ request: URLRequest, op: any ObservedOperation, method: String,
     classifyRetryableStatus: Bool
   ) async throws -> HTTPResponse {
     // Gate this attempt on the breaker. Rejecting here (rather than once before the retry loop) means a

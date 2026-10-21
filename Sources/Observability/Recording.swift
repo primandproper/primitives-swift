@@ -8,8 +8,9 @@ public enum Pillar: Sendable, Equatable {
 }
 
 /// A single recorded attachment with a global sequence number, so tests can assert ordering across
-/// operations. Ported from platform-go's `recording.Observation`.
-public struct Observation: Sendable, Equatable {
+/// operations. Ported from platform-go's `recording.Observation`, renamed because a bare `Observation`
+/// shadows Apple's Observation module and breaks `@Observable` in any file importing this one.
+public struct RecordedObservation: Sendable, Equatable {
   public let key: String
   public let value: String
   public let pillar: Pillar
@@ -35,9 +36,10 @@ public final class RecordingObserver: Observer, @unchecked Sendable {
 
   public var operations: [RecordingOperation] { state.withLock { $0.operations } }
 
-  public func operation<R>(name: String, _ body: (any Operation) async throws -> R) async rethrows
-    -> R
-  {
+  public func operation<R>(
+    name: String, isolation: isolated (any Actor)?,
+    body: (any ObservedOperation) async throws -> R
+  ) async rethrows -> R {
     let op = makeOperation(name: name)
     return try await SpanContextStore.$current.withValue(op.span.context) {
       defer { op.end() }
@@ -45,7 +47,7 @@ public final class RecordingObserver: Observer, @unchecked Sendable {
     }
   }
 
-  public func begin(name: String) -> any Operation {
+  public func begin(name: String) -> any ObservedOperation {
     makeOperation(name: name)
   }
 
@@ -64,9 +66,9 @@ public final class RecordingObserver: Observer, @unchecked Sendable {
   }
 }
 
-/// Test-only `Operation` capturing each attachment with its pillar. Ported from
+/// Test-only `ObservedOperation` capturing each attachment with its pillar. Ported from
 /// `recording.RecordingOperation`.
-public final class RecordingOperation: Operation, @unchecked Sendable {
+public final class RecordingOperation: ObservedOperation, @unchecked Sendable {
   public let name: String
   public let span: any Span
   public let logger: any Logger = NoopLogger()
@@ -74,7 +76,7 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
   private let nextSeq: @Sendable () -> Int
   private let state = OSAllocatedUnfairLock(initialState: State())
   private struct State {
-    var observations: [Observation] = []
+    var observations: [RecordedObservation] = []
     var errors: [(context: String, error: String)] = []
     var acknowledgements: [String] = []
     var ended = false
@@ -88,7 +90,7 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
 
   // MARK: Captured state (for assertions)
 
-  public var observations: [Observation] { state.withLock { $0.observations } }
+  public var observations: [RecordedObservation] { state.withLock { $0.observations } }
   public var recordedErrors: [(context: String, error: String)] { state.withLock { $0.errors } }
   /// Descriptions passed to a successful `acknowledge(nil, …)`, mirroring the info log the production
   /// operation writes on the success path so tests can observe it.
@@ -106,34 +108,34 @@ public final class RecordingOperation: Operation, @unchecked Sendable {
     observations.first { $0.key == key }?.value
   }
 
-  // MARK: Operation
+  // MARK: ObservedOperation
 
   private func record(_ key: String, _ value: AttributeValue, _ pillar: Pillar) {
-    let obs = Observation(
+    let obs = RecordedObservation(
       key: key, value: value.rendered, pillar: pillar, seq: nextSeq())
     state.withLock { $0.observations.append(obs) }
   }
 
   @discardableResult
-  public func set(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func set(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     record(key, value, .both)
     return self
   }
 
   @discardableResult
-  public func setValues(_ values: [String: AttributeValue]) -> any Operation {
+  public func setValues(_ values: [String: AttributeValue]) -> any ObservedOperation {
     for (k, v) in values.sorted(by: { $0.key < $1.key }) { record(k, v, .both) }
     return self
   }
 
   @discardableResult
-  public func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func spanOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     record(key, value, .span)
     return self
   }
 
   @discardableResult
-  public func logOnly(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func logOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     record(key, value, .log)
     return self
   }

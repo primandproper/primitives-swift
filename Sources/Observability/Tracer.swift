@@ -57,7 +57,7 @@ extension Tracer {
 }
 
 /// A unit of work, ported from `tracing.Span`. Conformers are `Sendable` so a span can be carried
-/// alongside an `Operation` across suspension points.
+/// alongside an `ObservedOperation` across suspension points.
 public protocol Span: Sendable {
   var name: String { get }
   var context: SpanContext { get }

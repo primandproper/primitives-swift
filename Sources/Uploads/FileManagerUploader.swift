@@ -127,7 +127,7 @@ public struct FileManagerUploader: Uploader {
   /// the root or sit under `root + "/"`. That single prefix check catches `..` traversal, absolute paths
   /// (which `appendingPathComponent` folds under the root but a crafted `../` could still escape), and
   /// sneaky mixes — all before any filesystem call.
-  func resolvedURL(for path: String, op: any Observability.Operation) throws -> URL {
+  func resolvedURL(for path: String, op: any ObservedOperation) throws -> URL {
     let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       op.acknowledge(UploadsError.invalidPath(path), "empty object path")
