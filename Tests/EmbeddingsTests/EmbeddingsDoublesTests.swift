@@ -48,8 +48,8 @@ struct EmbeddingsDoublesTests {
 
   @Test("a throwing handler propagates its typed EmbeddingsError")
   func mockThrows() async throws {
-    let mock = EmbedderMock(embedHandler: { _ in throw EmbeddingsError.authentication })
-    await #expect(throws: EmbeddingsError.authentication) {
+    let mock = EmbedderMock(embedHandler: { _ in throw EmbeddingsError.embeddingFailed("x") })
+    await #expect(throws: EmbeddingsError.embeddingFailed("x")) {
       _ = try await mock.embed("x")
     }
   }
