@@ -60,7 +60,8 @@ public actor InMemoryCache<Value: Codable & Sendable>: BatchCache {
 
   // The `begin`/`end` span form is used (rather than `observer.operation { … }`) because these bodies
   // touch actor-isolated state: a `self`-isolated closure can't be sent to the nonisolated `operation`
-  // under Swift 6. `begin` returns a `Sendable` ``Operation`` we drive inline in the actor's context.
+  // under Swift 6. `begin` returns a `Sendable` ``ObservedOperation`` we drive inline in the actor's
+  // context.
 
   public func get(_ key: String) async throws -> Value? {
     let op = observer.begin("cache.get")

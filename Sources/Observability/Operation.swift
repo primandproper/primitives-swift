@@ -15,18 +15,18 @@ public struct ObservabilityError: Error, CustomStringConvertible {
 }
 
 /// The per-call observability bag returned inside `Observer.operation`, ported from platform-go's
-/// `observability.Operation`.
+/// `observability.Operation`, renamed because a bare `Operation` is ambiguous with Foundation's.
 ///
 /// The defining behavior: ``set(_:_:)`` records to **both** the active span and the running
 /// (span-enriched) logger, so a single call lands in your traces and your logs at once.
-public protocol Operation: AnyObject, Sendable {
+public protocol ObservedOperation: AnyObject, Sendable {
   /// Record on both span and logger.
-  @discardableResult func set(_ key: String, _ value: AttributeValue) -> any Operation
-  @discardableResult func setValues(_ values: [String: AttributeValue]) -> any Operation
+  @discardableResult func set(_ key: String, _ value: AttributeValue) -> any ObservedOperation
+  @discardableResult func setValues(_ values: [String: AttributeValue]) -> any ObservedOperation
   /// Record on the span only.
-  @discardableResult func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation
+  @discardableResult func spanOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation
   /// Record on the logger only.
-  @discardableResult func logOnly(_ key: String, _ value: AttributeValue) -> any Operation
+  @discardableResult func logOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation
 
   var logger: any Logger { get }
   var span: any Span { get }
@@ -41,21 +41,21 @@ public protocol Operation: AnyObject, Sendable {
   func end()
 }
 
-extension Operation {
+extension ObservedOperation {
   /// Scalar sugar over the `AttributeValue` requirements so `op.set(Keys.responseStatus, code)`
   /// (an `Int`) and `op.set("name", "abc")` (a `String` literal) work without an explicit case.
   @discardableResult public func set(_ key: String, _ value: some AttributeRepresentable)
-    -> any Operation
+    -> any ObservedOperation
   {
     set(key, value.attributeValue)
   }
   @discardableResult public func spanOnly(_ key: String, _ value: some AttributeRepresentable)
-    -> any Operation
+    -> any ObservedOperation
   {
     spanOnly(key, value.attributeValue)
   }
   @discardableResult public func logOnly(_ key: String, _ value: some AttributeRepresentable)
-    -> any Operation
+    -> any ObservedOperation
   {
     logOnly(key, value.attributeValue)
   }
@@ -63,7 +63,7 @@ extension Operation {
 
 /// Production operation. Holds the span and a logger that grows as values are set; the mutable logger
 /// is guarded by a lock so the operation is safe to touch across suspension points.
-public final class LiveOperation: Operation, @unchecked Sendable {
+public final class LiveOperation: ObservedOperation, @unchecked Sendable {
   public let span: any Span
   private let state: OSAllocatedUnfairLock<State>
 
@@ -79,7 +79,7 @@ public final class LiveOperation: Operation, @unchecked Sendable {
   public var logger: any Logger { state.withLock { $0.logger } }
 
   @discardableResult
-  public func set(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func set(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     span.attach(key, value)
     // `AttributeValue` is `Sendable`, so it crosses into the lock's `@Sendable` closure directly and
     // the read-modify-write happens under a single acquisition — concurrent sets can no longer read
@@ -89,7 +89,7 @@ public final class LiveOperation: Operation, @unchecked Sendable {
   }
 
   @discardableResult
-  public func setValues(_ values: [String: AttributeValue]) -> any Operation {
+  public func setValues(_ values: [String: AttributeValue]) -> any ObservedOperation {
     for (k, v) in values { span.attach(k, v) }
     state.withLock {
       for (k, v) in values { $0.logger = $0.logger.withValue(k, v) }
@@ -98,13 +98,13 @@ public final class LiveOperation: Operation, @unchecked Sendable {
   }
 
   @discardableResult
-  public func spanOnly(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func spanOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     span.attach(key, value)
     return self
   }
 
   @discardableResult
-  public func logOnly(_ key: String, _ value: AttributeValue) -> any Operation {
+  public func logOnly(_ key: String, _ value: AttributeValue) -> any ObservedOperation {
     state.withLock { $0.logger = $0.logger.withValue(key, value) }
     return self
   }

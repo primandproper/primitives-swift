@@ -76,7 +76,7 @@ For the full versioning policy and the release process, see [`RELEASING.md`](REL
 |---|---|
 | `Pillars` | The three backends — `logger`, `tracer`, `metrics` — built once at startup. |
 | `Observer` | One per component. Bundles a *named* logger + tracer so a component holds a single observability field. |
-| `Operation` | The per-call bag from `observer.operation { … }`. `set` dual-writes to span **and** logger. |
+| `ObservedOperation` | The per-call bag from `observer.operation { … }`. `set` dual-writes to span **and** logger. Named to stay clear of Foundation's `Operation`. |
 | `ObservabilityConfig` | Codable config that selects backends and `bootstrap()`s the pillars. |
 
 ## Quick start
@@ -138,6 +138,9 @@ try await observer.operation("checkout") { op in
 
 `op.logger` and `op.span` are available if you need the underlying pillars directly inside an
 operation.
+
+The body runs on the caller's isolation, like `withTaskGroup`: called from an actor or a `@MainActor`
+type, it can read and mutate that type's state directly, with no `await` and no `Sendable` closure.
 
 ### Errors
 
@@ -316,8 +319,8 @@ import Testing
 }
 ```
 
-`RecordingOperation` also exposes `recordedErrors`, `ended`, and helpers like `value(forKey:)` and
-`keys(on:)`.
+Each entry in `observations` is a `RecordedObservation`. `RecordingOperation` also exposes
+`recordedErrors`, `ended`, and helpers like `value(forKey:)` and `keys(on:)`.
 
 ## Make targets
 
